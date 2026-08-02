@@ -1,0 +1,12 @@
+{
+  "name": "rectangular-waveguide-demo",
+  "adapter": "mock-em",
+  "fixed": {
+    "width_mm": 20.0,
+    "length_mm": 50.0,
+    "relative_permittivity": 1.0
+  },
+  "sweep": {
+    "frequency_ghz": [6.0, 8.0, 10.0, 12.0]
+  }
+}

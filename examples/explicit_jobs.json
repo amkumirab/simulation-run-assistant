@@ -1,0 +1,18 @@
+{
+  "name": "two-design-comparison",
+  "adapter": "mock-em",
+  "jobs": [
+    {
+      "frequency_ghz": 10.0,
+      "width_mm": 18.0,
+      "length_mm": 50.0,
+      "relative_permittivity": 1.0
+    },
+    {
+      "frequency_ghz": 10.0,
+      "width_mm": 22.0,
+      "length_mm": 50.0,
+      "relative_permittivity": 1.0
+    }
+  ]
+}
