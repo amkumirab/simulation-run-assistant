@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import time
+from pathlib import Path
 from typing import Any
 
 from simulation_assistant.adapters.base import SimulationAdapter
@@ -13,7 +14,12 @@ class MockElectromagneticAdapter(SimulationAdapter):
 
     name = "mock-em"
 
-    def run(self, parameters: dict[str, Any]) -> SimulationResult:
+    def run(
+        self,
+        parameters: dict[str, Any],
+        *,
+        work_dir: Path | None = None,
+    ) -> SimulationResult:
         if parameters.get("force_failure"):
             raise RuntimeError("Intentional demo failure requested by force_failure")
 

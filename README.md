@@ -25,7 +25,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - JSON manifests with explicit jobs or Cartesian parameter sweeps
 - Persistent SQLite queue with atomic job claiming
 - Failure isolation and explicit retry workflow
-- Pluggable simulation adapter interface
+- Pluggable simulation adapter interface and official COMSOL batch bridge
 - Deterministic electromagnetic mock adapter for demos and CI
 - Per-job JSON results and dependency-free SVG response plots
 - Auto-refreshing, read-only local web dashboard
@@ -41,7 +41,7 @@ flowchart LR
     B --> C["Simulation runner"]
     C --> D{"Adapter"}
     D --> E["Mock EM model"]
-    D -. next milestone .-> F["COMSOL"]
+    D --> F["COMSOL batch"]
     C --> G["JSON + SVG artifacts"]
     C --> H["Telegram bot and notifications"]
     B --> I["Local dashboard"]
@@ -123,6 +123,7 @@ sim-assistant retry JOB_ID             Requeue a failed job
 sim-assistant serve [--port 8080]      Start the local dashboard
 sim-assistant telegram-id              Discover recent Telegram chat IDs
 sim-assistant bot                      Run the authorized Telegram command bot
+sim-assistant comsol-check             Inspect COMSOL and MPH license requirements
 ```
 
 Use `--database` and `--artifacts` before the subcommand to override runtime
@@ -176,21 +177,36 @@ from simulation_assistant.types import SimulationResult
 class MySolverAdapter(SimulationAdapter):
     name = "my-solver"
 
-    def run(self, parameters: dict) -> SimulationResult:
+    def run(self, parameters: dict, *, work_dir=None) -> SimulationResult:
         # Call the solver and normalize its output.
         return SimulationResult(metrics={}, series=[], metadata={})
 ```
 
-Register the adapter in `SimulationRunner`, then use its name in a manifest. A
-detailed COMSOL plan is available in
-[`docs/COMSOL_INTEGRATION.md`](docs/COMSOL_INTEGRATION.md).
+Register the adapter in `SimulationRunner`, then use its name in a manifest.
+
+## COMSOL batch integration
+
+The `comsol` adapter copies the configured MPH model into a job-specific
+artifact directory, applies manifest parameters through COMSOL's `-pname` and
+`-plist` batch options, runs one study or job sequence, stores `output.mph` and
+`comsol.log`, and extracts saved numerical tables into `result.json`.
+
+Configure `COMSOL_EXECUTABLE`, `COMSOL_MODEL_PATH`, and optionally
+`COMSOL_STUDY_TAG`, then validate the setup:
+
+```bash
+sim-assistant comsol-check
+```
+
+See [`docs/COMSOL_INTEGRATION.md`](docs/COMSOL_INTEGRATION.md) for the full
+configuration and model contract.
 
 ## Roadmap
 
 The repository intentionally leaves useful, portfolio-worthy increments for
 future commits:
 
-- Real COMSOL adapter with unit-aware parameter mapping
+- COMSOL result-export contracts for additional model families
 - Attach result plots to Telegram messages
 - Parallel workers with configurable license-seat limits
 - Stop/cancel controls and stale-running-job recovery
@@ -202,7 +218,7 @@ future commits:
 
 ```text
 src/simulation_assistant/
-|-- adapters/       # Solver boundary, mock model, COMSOL extension point
+|-- adapters/       # Solver boundary, mock model, COMSOL batch adapter
 |-- cli.py          # Command-line interface
 |-- manifest.py     # JSON validation and sweep expansion
 |-- notifications.py
@@ -221,8 +237,8 @@ src/simulation_assistant/
 - Secrets are read from the process environment; `.env` files are not loaded
   automatically.
 - The Telegram command bot is a foreground long-polling process.
-- A real COMSOL bridge is not included yet because its correct implementation
-  depends on the installed COMSOL modules and licensing setup.
+- COMSOL requires a local installation, compatible licenses, and a known model
+  contract; arbitrary MPH files cannot be interpreted automatically.
 
 ## License
 

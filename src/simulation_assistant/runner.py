@@ -53,7 +53,8 @@ class SimulationRunner:
                     raise ValueError(
                         f"Unknown adapter '{job.adapter}'. Available: {available}"
                     )
-                result = adapter.run(job.parameters)
+                work_dir = self.artifact_root / f"job-{job.id:06d}"
+                result = adapter.run(job.parameters, work_dir=work_dir)
                 artifact_dir = write_artifacts(self.artifact_root, job, result)
                 self.store.mark_succeeded(job.id, result.to_dict(), str(artifact_dir))
                 succeeded += 1

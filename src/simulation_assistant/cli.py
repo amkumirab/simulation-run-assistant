@@ -14,6 +14,7 @@ from simulation_assistant.telegram_api import TelegramBotApi
 from simulation_assistant.telegram_bot import discover_chat_ids, run_bot
 from simulation_assistant.types import JobStatus
 from simulation_assistant.web import serve_dashboard
+from simulation_assistant.adapters.comsol import ComsolConfig, check_comsol
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,6 +64,17 @@ def build_parser() -> argparse.ArgumentParser:
         "bot",
         help="Run the authorized Telegram command bot",
     )
+
+    comsol_check = subparsers.add_parser(
+        "comsol-check",
+        help="Validate COMSOL and inspect an MPH model's license requirements",
+    )
+    comsol_check.add_argument("--model", help="Path to the MPH model")
+    comsol_check.add_argument("--executable", help="Path to comsolbatch.exe")
+    comsol_check.add_argument("--study", help="Study tag to run")
+    comsol_check.add_argument("--job", help="COMSOL job-sequence tag to run")
+    comsol_check.add_argument("--timeout", type=int, help="Run timeout in seconds")
+    comsol_check.add_argument("--cores", type=int, help="Number of COMSOL cores")
     return parser
 
 
@@ -121,6 +133,16 @@ def main(argv: Sequence[str] | None = None) -> None:
                 artifact_root=args.artifacts,
                 allowed_chat_id=chat_id,
             )
+        elif args.command == "comsol-check":
+            config = ComsolConfig.from_environment(
+                executable=args.executable,
+                model_path=args.model,
+                study_tag=args.study,
+                job_tag=args.job,
+                timeout_seconds=args.timeout,
+                cores=args.cores,
+            )
+            print(json.dumps(check_comsol(config), indent=2))
     except (KeyError, OSError, RuntimeError, ValueError) as exc:
         parser.error(str(exc))
 
