@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Simulation Run Assistant</title>
+  <style>
+    :root {
+      --canvas: #f4f6f8;
+      --surface: #ffffff;
+      --surface-soft: #f8fafb;
+      --ink: #15232d;
+      --muted: #64727d;
+      --line: #dce3e7;
+      --line-strong: #cbd5db;
+      --navy: #16324a;
+      --blue: #246bfe;
+      --blue-soft: #eaf1ff;
+      --teal: #087f78;
+      --teal-soft: #e5f6f3;
+      --amber: #95620b;
+      --amber-soft: #fff4d8;
+      --red: #b42318;
+      --red-soft: #feeceb;
+      --shadow: 0 18px 50px rgba(21, 35, 45, .08);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        radial-gradient(circle at 12% -10%, rgba(36, 107, 254, .09), transparent 28rem),
+        var(--canvas);
+      color: var(--ink);
+      font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visible {
+      outline: 3px solid rgba(36, 107, 254, .24);
+      outline-offset: 2px;
+    }
+    .shell { min-height: 100vh; display: grid; grid-template-columns: 248px minmax(0, 1fr); }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 28px 22px;
+      background: var(--navy);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 750; letter-spacing: -.02em; }
+    .brand-mark {
+      width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+      background: linear-gradient(145deg, #5f91ff, #246bfe); box-shadow: 0 8px 20px rgba(0,0,0,.2);
+      font-size: 12px; letter-spacing: .04em;
+    }
+    .local-pill {
+      margin: 24px 0 30px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.12);
+      border-radius: 12px; color: #c9d7e1; display: flex; align-items: center; gap: 9px; font-size: 12px;
+    }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: #59d8b3; box-shadow: 0 0 0 4px rgba(89,216,179,.12); }
+    .steps { display: grid; gap: 8px; }
+    .step {
+      display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: center;
+      padding: 11px; border-radius: 12px; color: #aebfcb;
+    }
+    .step.active { color: #fff; background: rgba(255,255,255,.08); }
+    .step.done { color: #d9f7ee; }
+    .step-number {
+      width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px;
+      background: rgba(255,255,255,.09); font-size: 12px; font-weight: 700;
+    }
+    .step.done .step-number { background: #147d70; }
+    .sidebar-note { margin-top: auto; color: #8fa5b5; font-size: 12px; }
+    .sidebar-note strong { display: block; color: #c9d7e1; margin-bottom: 5px; }
+    .main { min-width: 0; padding: 28px clamp(20px, 4vw, 56px) 54px; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 34px; }
+    .crumb { color: var(--muted); font-size: 13px; }
+    .top-actions { display: flex; align-items: center; gap: 10px; }
+    .sync-label { color: var(--muted); font-size: 12px; }
+    .icon-button {
+      width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 11px;
+      background: var(--surface); color: var(--navy); font-size: 18px;
+    }
+    .hero { max-width: 760px; margin-bottom: 24px; }
+    .eyebrow { color: var(--blue); text-transform: uppercase; letter-spacing: .13em; font-size: 11px; font-weight: 800; }
+    h1 { margin: 8px 0 10px; font-size: clamp(32px, 4vw, 52px); line-height: 1.04; letter-spacing: -.045em; }
+    .hero p { margin: 0; color: var(--muted); font-size: 16px; max-width: 680px; }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
+    .metric { padding: 16px 17px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.7); }
+    .metric span { color: var(--muted); font-size: 12px; text-transform: capitalize; }
+    .metric b { display: block; margin-top: 3px; font-size: 25px; letter-spacing: -.03em; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(280px, .8fr); gap: 18px; align-items: start; }
+    .stack { display: grid; gap: 18px; min-width: 0; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .panel-head { padding: 21px 22px 0; display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+    .panel-title { display: flex; gap: 12px; align-items: start; }
+    .panel-index {
+      flex: 0 0 auto; width: 29px; height: 29px; border-radius: 9px; display: grid; place-items: center;
+      background: var(--blue-soft); color: var(--blue); font-weight: 800;
+    }
+    h2 { margin: 0; font-size: 17px; letter-spacing: -.015em; }
+    .panel-subtitle { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .panel-body { padding: 20px 22px 22px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .field { display: grid; gap: 6px; min-width: 0; }
+    .field.wide { grid-column: 1 / -1; }
+    label { font-size: 12px; font-weight: 700; color: #34444f; }
+    .hint { color: var(--muted); font-size: 11px; font-weight: 400; }
+    input, select {
+      width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line-strong);
+      border-radius: 11px; background: #fff; color: var(--ink); transition: border-color .16s, box-shadow .16s;
+    }
+    input:hover, select:hover { border-color: #aab8c1; }
+    .path-input { font-family: "Cascadia Code", Consolas, monospace; font-size: 12px; }
+    .mode-switch { display: inline-flex; padding: 3px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 10px; }
+    .mode-switch button { border: 0; padding: 7px 12px; border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px; }
+    .mode-switch button.active { background: #fff; color: var(--ink); box-shadow: 0 2px 8px rgba(21,35,45,.08); font-weight: 700; }
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; margin-top: 18px; }
+    .button { border: 1px solid transparent; border-radius: 11px; min-height: 41px; padding: 9px 14px; font-weight: 750; }
+    .button.primary { background: var(--blue); color: #fff; box-shadow: 0 8px 18px rgba(36,107,254,.18); }
+    .button.secondary { background: #fff; border-color: var(--line-strong); color: var(--ink); }
+    .button.ghost { background: transparent; color: var(--blue); padding-inline: 7px; }
+    .button:disabled { cursor: not-allowed; opacity: .48; box-shadow: none; }
+    .button.busy { color: transparent; position: relative; }
+    .button.busy::after { content: ""; position: absolute; width: 16px; height: 16px; inset: 0; margin: auto; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: spin .75s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .connection-state { display: inline-flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 999px; background: var(--surface-soft); color: var(--muted); font-size: 11px; font-weight: 700; }
+    .connection-state.ok { color: var(--teal); background: var(--teal-soft); }
+    .model-card { display: none; margin-top: 18px; padding: 15px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 13px; }
+    .model-card.visible { display: block; }
+    .model-top { display: flex; justify-content: space-between; gap: 14px; }
+    .model-name { font-weight: 800; }
+    .model-version { color: var(--muted); font-size: 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+    .chip { padding: 4px 8px; border-radius: 8px; background: #fff; border: 1px solid var(--line); color: #455560; font-size: 11px; }
+    .parameter-list { display: grid; gap: 9px; }
+    .parameter-row { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(150px, 1fr) 34px; gap: 8px; align-items: center; }
+    .remove-button { width: 34px; height: 34px; border: 0; background: transparent; border-radius: 9px; color: var(--muted); font-size: 18px; }
+    .remove-button:hover { background: var(--red-soft); color: var(--red); }
+    .empty-parameters { color: var(--muted); padding: 18px; border: 1px dashed var(--line-strong); border-radius: 12px; text-align: center; }
+    .assistant { position: sticky; top: 24px; overflow: hidden; }
+    .assistant-head { padding: 22px; background: var(--navy); color: #fff; }
+    .assistant-label { color: #8fc1ff; text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 800; }
+    .assistant h2 { margin-top: 7px; font-size: 20px; }
+    .assistant-head p { color: #b8c8d3; margin: 8px 0 0; font-size: 13px; }
+    .assistant-body { padding: 18px; }
+    .assistant-log { display: grid; gap: 12px; max-height: 300px; overflow: auto; }
+    .message { display: grid; grid-template-columns: 9px 1fr; gap: 10px; }
+    .message-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: var(--line-strong); }
+    .message.success .message-dot { background: var(--teal); }
+    .message.error .message-dot { background: var(--red); }
+    .message.info .message-dot { background: var(--blue); }
+    .message-text { font-size: 12px; color: #42515b; }
+    .message-text strong { display: block; color: var(--ink); font-size: 12px; }
+    .message-time { color: #98a3aa; font-size: 10px; }
+    .quick-actions { border-top: 1px solid var(--line); margin-top: 17px; padding-top: 15px; display: grid; gap: 8px; }
+    .quick-actions button { width: 100%; text-align: left; border: 0; border-radius: 10px; padding: 10px 11px; background: var(--surface-soft); color: #35454f; }
+    .quick-actions button:hover { background: var(--blue-soft); color: var(--blue); }
+    .queue-panel { margin-top: 18px; overflow: hidden; }
+    .queue-toolbar { display: flex; gap: 10px; align-items: center; }
+    .filter { width: auto; min-height: 36px; padding-block: 6px; }
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 760px; }
+    th, td { padding: 13px 18px; text-align: left; border-top: 1px solid var(--line); }
+    th { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; background: var(--surface-soft); }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #fafcff; }
+    td code { font-family: "Cascadia Code", Consolas, monospace; color: #42515b; }
+    .status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; font-size: 11px; font-weight: 750; text-transform: capitalize; }
+    .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .status.queued { color: var(--amber); background: var(--amber-soft); }
+    .status.running { color: var(--blue); background: var(--blue-soft); }
+    .status.succeeded { color: var(--teal); background: var(--teal-soft); }
+    .status.failed { color: var(--red); background: var(--red-soft); }
+    .empty-row { text-align: center; color: var(--muted); padding: 34px; }
+    dialog { width: min(640px, calc(100vw - 30px)); border: 0; border-radius: 18px; padding: 0; box-shadow: 0 26px 90px rgba(10,26,38,.3); }
+    dialog::backdrop { background: rgba(12,28,40,.4); backdrop-filter: blur(3px); }
+    .dialog-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+    .dialog-body { padding: 20px 22px; max-height: 65vh; overflow: auto; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+    .detail { background: var(--surface-soft); border-radius: 10px; padding: 10px; }
+    .detail span { display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
+    .detail b { display: block; margin-top: 3px; font-size: 13px; }
+    .object-section { margin-top: 18px; }
+    .object-section h3 { margin: 0 0 9px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .kv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .kv { min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+    .kv span { display: block; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+    .kv code { display: block; margin-top: 4px; color: var(--ink); overflow-wrap: anywhere; }
+    .error-box { margin-top: 16px; padding: 12px; border-radius: 10px; color: var(--red); background: var(--red-soft); overflow-wrap: anywhere; }
+    details { margin-top: 18px; }
+    summary { cursor: pointer; color: var(--blue); font-weight: 700; margin-bottom: 10px; }
+    pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border-radius: 11px; background: #112638; color: #d7e4ed; font: 11px/1.6 "Cascadia Code", Consolas, monospace; }
+    .toast { position: fixed; right: 24px; bottom: 24px; max-width: min(380px, calc(100vw - 48px)); padding: 12px 15px; border-radius: 12px; background: var(--navy); color: #fff; box-shadow: var(--shadow); transform: translateY(120px); opacity: 0; transition: .22s; z-index: 20; }
+    .toast.visible { transform: translateY(0); opacity: 1; }
+    .toast.error { background: #7f1d1d; }
+    @media (max-width: 1050px) {
+      .shell { grid-template-columns: 86px minmax(0, 1fr); }
+      .sidebar { padding-inline: 16px; align-items: center; }
+      .brand span, .local-pill span, .step span, .sidebar-note { display: none; }
+      .local-pill { padding: 10px; }
+      .step { grid-template-columns: 28px; }
+      .workspace { grid-template-columns: 1fr; }
+      .assistant { position: static; }
+    }
+    @media (max-width: 720px) {
+      .shell { display: block; }
+      .sidebar { position: static; width: 100%; height: auto; padding: 14px 18px; flex-direction: row; justify-content: space-between; }
+      .brand span { display: inline; }
+      .local-pill { margin: 0 0 0 auto; }
+      .steps { display: none; }
+      .main { padding: 22px 16px 40px; }
+      .topbar { margin-bottom: 26px; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .form-grid { grid-template-columns: 1fr; }
+      .field.wide { grid-column: auto; }
+      .parameter-row { grid-template-columns: 1fr 1fr 34px; }
+      .panel-head { flex-direction: column; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .sync-label { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">SRA</div><span>Simulation Assistant</span></div>
+      <div class="local-pill"><i class="pulse"></i><span>Local workspace</span></div>
+      <nav class="steps" aria-label="Workflow">
+        <div class="step active" id="stepConnect"><div class="step-number">1</div><span>Connect COMSOL</span></div>
+        <div class="step" id="stepConfigure"><div class="step-number">2</div><span>Configure run</span></div>
+        <div class="step" id="stepMonitor"><div class="step-number">3</div><span>Monitor queue</span></div>
+      </nav>
+      <div class="sidebar-note"><strong>Private by design</strong>Model paths stay in this browser session and are never written to the repository.</div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="crumb">Workspace / COMSOL control</div>
+        <div class="top-actions"><span class="sync-label" id="updated">Connecting...</span><button class="icon-button" id="refreshButton" aria-label="Refresh jobs" title="Refresh jobs">&#8635;</button></div>
+      </div>
+
+      <section class="hero">
+        <div class="eyebrow">Local simulation copilot</div>
+        <h1>Move from model to result with less friction.</h1>
+        <p>Connect a COMSOL model, review its studies and parameters, then launch and monitor runs from one focused workspace.</p>
+      </section>
+
+      <section class="metrics" aria-label="Queue summary">
+        <div class="metric"><span>Queued</span><b id="countQueued">0</b></div>
+        <div class="metric"><span>Running</span><b id="countRunning">0</b></div>
+        <div class="metric"><span>Succeeded</span><b id="countSucceeded">0</b></div>
+        <div class="metric"><span>Failed</span><b id="countFailed">0</b></div>
+      </section>
+
+      <div class="workspace">
+        <div class="stack">
+          <section class="panel" id="connectionPanel">
+            <div class="panel-head">
+              <div class="panel-title"><div class="panel-index">1</div><div><h2>Connect COMSOL</h2><div class="panel-subtitle">Validate the local installation, model file, study, and licenses.</div></div></div>
+              <span class="connection-state" id="connectionState">Not checked</span>
+            </div>
+            <div class="panel-body">
+              <form id="connectionForm">
+                <div class="form-grid">
+                  <div class="field wide"><label for="executable">COMSOL batch executable <span class="hint">Auto-detected when available</span></label><input class="path-input" id="executable" name="executable" autocomplete="off" spellcheck="false" placeholder="C:\Program Files\COMSOL\...\comsolbatch.exe"></div>
+                  <div class="field wide"><label for="modelPath">MPH model path <span class="hint">Used locally and never persisted</span></label><input class="path-input" id="modelPath" name="modelPath" autocomplete="off" spellcheck="false" placeholder="C:\path\to\model.mph" required></div>
+                  <div class="field wide"><label>Run target</label><div class="mode-switch" role="group" aria-label="COMSOL run target"><button type="button" class="active" data-mode="study">Study</button><button type="button" data-mode="job">Job sequence</button></div></div>
+                  <div class="field" id="studyField"><label for="studyTag">Study tag</label><input id="studyTag" placeholder="Auto-select for a single study"></div>
+                  <div class="field" id="jobField" hidden><label for="jobTag">Job sequence tag</label><input id="jobTag" placeholder="Example: job1"></div>
+                  <div class="field"><label for="timeout">Timeout <span class="hint">seconds</span></label><input id="timeout" type="number" min="1" step="1" value="3600"></div>
+                  <div class="field"><label for="cores">CPU cores <span class="hint">optional</span></label><input id="cores" type="number" min="1" step="1" placeholder="COMSOL default"></div>
+                </div>
+                <div class="actions"><button class="button primary" id="checkButton" type="submit">Check connection</button><button class="button ghost" id="resetButton" type="button">Reset session</button></div>
+              </form>
+              <div class="model-card" id="modelCard">
+                <div class="model-top"><div><div class="model-name" id="modelName"></div><div class="model-version" id="modelVersion"></div></div><span class="connection-state ok">Ready</span></div>
+                <div class="chips" id="modelChips"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" id="runPanel">
+            <div class="panel-head">
+              <div class="panel-title"><div class="panel-index">2</div><div><h2>Configure a run</h2><div class="panel-subtitle">Model parameters appear here after a successful connection check.</div></div></div>
+              <button class="button ghost" id="addParameter" type="button">+ Add parameter</button>
+            </div>
+            <div class="panel-body">
+              <div class="field" style="margin-bottom:14px"><label for="batchName">Run label</label><input id="batchName" maxlength="120"></div>
+              <div class="parameter-list" id="parameterList"><div class="empty-parameters">Connect a model to load its parameters, or add one manually.</div></div>
+              <div class="actions"><button class="button primary" id="runNow" type="button" disabled>Run now</button><button class="button secondary" id="queueOnly" type="button" disabled>Queue only</button></div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="panel assistant">
+          <div class="assistant-head"><div class="assistant-label">Assistant</div><h2>Run guidance</h2><p id="assistantSummary">Start by selecting your local COMSOL model. I will inspect it before any run begins.</p></div>
+          <div class="assistant-body">
+            <div class="assistant-log" id="assistantLog" aria-live="polite"></div>
+            <div class="quick-actions">
+              <button id="quickCheck">Check the current connection</button>
+              <button id="quickRunNext">Run the next queued job</button>
+              <button id="quickRefresh">Refresh queue status</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <section class="panel queue-panel" id="queuePanel">
+        <div class="panel-head" style="padding-bottom:18px">
+          <div class="panel-title"><div class="panel-index">3</div><div><h2>Run queue</h2><div class="panel-subtitle">Select a row to inspect parameters, results, artifacts, and errors.</div></div></div>
+          <div class="queue-toolbar"><select class="filter" id="statusFilter" aria-label="Filter by status"><option value="all">All statuses</option><option value="queued">Queued</option><option value="running">Running</option><option value="succeeded">Succeeded</option><option value="failed">Failed</option></select></div>
+        </div>
+        <div class="table-wrap"><table><thead><tr><th>ID</th><th>Run</th><th>Adapter</th><th>Status</th><th>Attempts</th><th>Created</th></tr></thead><tbody id="jobs"><tr><td class="empty-row" colspan="6">No jobs yet.</td></tr></tbody></table></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="jobDialog">
+    <div class="dialog-head"><div><div class="eyebrow">Run details</div><h2 id="dialogTitle">Job</h2></div><button class="icon-button" id="closeDialog" aria-label="Close">&times;</button></div>
+    <div class="dialog-body" id="dialogBody"></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const API_TOKEN = __API_TOKEN__;
+    const state = { verified: false, mode: 'study', jobs: [], report: null };
+    const byId = id => document.getElementById(id);
+    const text = value => value == null || value === '' ? 'Not set' : String(value);
+    const shortDate = value => value ? new Date(value).toLocaleString() : 'Not started';
+
+    function connectionPayload() {
+      return {
+        executable: byId('executable').value.trim(),
+        model_path: byId('modelPath').value.trim(),
+        study_tag: state.mode === 'study' ? byId('studyTag').value : '',
+        job_tag: state.mode === 'job' ? byId('jobTag').value.trim() : '',
+        timeout_seconds: byId('timeout').value,
+        cores: byId('cores').value
+      };
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, options.method ? {
+        ...options,
+        headers: { 'Content-Type': 'application/json', 'X-Sim-Assistant-Token': API_TOKEN, ...(options.headers || {}) }
+      } : options);
+      let payload;
+      try { payload = await response.json(); } catch { payload = {}; }
+      if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+      return payload;
+    }
+
+    function notify(message, isError = false) {
+      const toast = byId('toast');
+      toast.textContent = message;
+      toast.className = `toast visible${isError ? ' error' : ''}`;
+      clearTimeout(notify.timer);
+      notify.timer = setTimeout(() => toast.className = 'toast', 3800);
+    }
+
+    function addMessage(title, message, type = 'info') {
+      const item = document.createElement('div'); item.className = `message ${type}`;
+      const dot = document.createElement('div'); dot.className = 'message-dot';
+      const content = document.createElement('div'); content.className = 'message-text';
+      const strong = document.createElement('strong'); strong.textContent = title;
+      const body = document.createElement('div'); body.textContent = message;
+      const time = document.createElement('div'); time.className = 'message-time'; time.textContent = new Date().toLocaleTimeString();
+      content.append(strong, body, time); item.append(dot, content);
+      byId('assistantLog').prepend(item);
+    }
+
+    function setBusy(button, busy) {
+      button.disabled = busy || (!state.verified && ['runNow', 'queueOnly'].includes(button.id));
+      button.classList.toggle('busy', busy);
+      button.setAttribute('aria-busy', String(busy));
+    }
+
+    function markConnectionDirty() {
+      if (!state.verified) return;
+      state.verified = false;
+      state.report = null;
+      byId('connectionState').textContent = 'Needs recheck';
+      byId('connectionState').className = 'connection-state';
+      byId('runNow').disabled = true; byId('queueOnly').disabled = true;
+      byId('stepConnect').className = 'step active'; byId('stepConfigure').className = 'step';
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === mode));
+      byId('studyField').hidden = mode !== 'study'; byId('jobField').hidden = mode !== 'job';
+      markConnectionDirty();
+    }
+
+    function addParameterRow(name = '', value = '') {
+      const list = byId('parameterList');
+      list.querySelector('.empty-parameters')?.remove();
+      const row = document.createElement('div'); row.className = 'parameter-row';
+      const nameInput = document.createElement('input'); nameInput.className = 'parameter-name'; nameInput.placeholder = 'Parameter name'; nameInput.value = name; nameInput.setAttribute('aria-label', 'Parameter name');
+      const valueInput = document.createElement('input'); valueInput.className = 'parameter-value'; valueInput.placeholder = 'Value with unit'; valueInput.value = value; valueInput.setAttribute('aria-label', `Value for ${name || 'parameter'}`);
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-button'; remove.textContent = '×'; remove.title = 'Remove parameter';
+      remove.addEventListener('click', () => { row.remove(); if (!list.children.length) renderEmptyParameters(); });
+      row.append(nameInput, valueInput, remove); list.append(row);
+    }
+
+    function renderEmptyParameters() {
+      const empty = document.createElement('div'); empty.className = 'empty-parameters'; empty.textContent = 'No parameters configured. Add one, or run the model with its saved defaults.';
+      byId('parameterList').append(empty);
+    }
+
+    function parametersPayload() {
+      const result = {};
+      document.querySelectorAll('.parameter-row').forEach(row => {
+        const name = row.querySelector('.parameter-name').value.trim();
+        const value = row.querySelector('.parameter-value').value.trim();
+        if (!name && !value) return;
+        if (!name || !value) throw new Error('Every parameter needs both a name and a value.');
+        if (Object.hasOwn(result, name)) throw new Error(`Parameter "${name}" is duplicated.`);
+        result[name] = value;
+      });
+      return result;
+    }
+
+    async function loadDiscovery() {
+      try {
+        const data = await api('/api/comsol/discovery');
+        if (data.executable) byId('executable').value = data.executable;
+        if (data.defaults) {
+          byId('timeout').value = data.defaults.timeout_seconds || 3600;
+          byId('cores').value = data.defaults.cores || '';
+          if (data.defaults.job_tag) { byId('jobTag').value = data.defaults.job_tag; setMode('job'); }
+        }
+        addMessage(data.executable ? 'COMSOL detected' : 'COMSOL path needed', data.executable ? 'The batch executable was found automatically.' : 'Select the local comsolbatch executable.', data.executable ? 'success' : 'info');
+      } catch (error) { addMessage('Discovery unavailable', error.message, 'error'); }
+    }
+
+    async function checkConnection() {
+      const button = byId('checkButton'); setBusy(button, true);
+      byId('connectionState').textContent = 'Checking...';
+      try {
+        const report = await api('/api/comsol/check', { method: 'POST', body: JSON.stringify({ connection: connectionPayload() }) });
+        state.verified = true; state.report = report;
+        byId('connectionState').textContent = 'Connected'; byId('connectionState').className = 'connection-state ok';
+        byId('modelName').textContent = report.model.filename;
+        byId('modelVersion').textContent = `${report.installed_version || 'COMSOL'} · model ${report.model.comsol_version || 'version unknown'}`;
+        const chips = byId('modelChips'); chips.replaceChildren();
+        [...(report.model.physics || []), ...(report.license_requirements || [])].forEach(value => { const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = value; chips.append(chip); });
+        byId('modelCard').className = 'model-card visible';
+        if (report.selected_study) byId('studyTag').value = report.selected_study;
+        const list = byId('parameterList'); list.replaceChildren();
+        Object.entries(report.model.parameters || {}).forEach(([name, value]) => addParameterRow(name, value));
+        if (!list.children.length) renderEmptyParameters();
+        byId('runNow').disabled = false; byId('queueOnly').disabled = false;
+        byId('stepConnect').className = 'step done'; byId('stepConfigure').className = 'step active';
+        byId('assistantSummary').textContent = `Ready to run ${report.model.filename}. Review the imported parameter values before starting.`;
+        addMessage('Connection verified', `${report.model.filename} is runnable and the required licenses are available.`, 'success');
+        notify('COMSOL connection verified.');
+      } catch (error) {
+        state.verified = false; byId('connectionState').textContent = 'Check failed'; byId('connectionState').className = 'connection-state';
+        addMessage('Connection check failed', error.message, 'error'); notify(error.message, true);
+      } finally { setBusy(button, false); }
+    }
+
+    async function submitRun(start) {
+      const button = start ? byId('runNow') : byId('queueOnly'); setBusy(button, true);
+      try {
+        const payload = await api('/api/runs', { method: 'POST', body: JSON.stringify({ connection: connectionPayload(), batch_name: byId('batchName').value.trim(), parameters: parametersPayload(), start }) });
+        const job = payload.job;
+        addMessage(start ? `Run #${job.id} finished` : `Run #${job.id} queued`, start ? `Final status: ${job.status}.` : 'It is ready for the worker or Run next action.', job.status === 'failed' ? 'error' : 'success');
+        notify(start ? `Run #${job.id}: ${job.status}` : `Run #${job.id} added to the queue`, job.status === 'failed');
+        byId('stepConfigure').className = 'step done'; byId('stepMonitor').className = 'step active';
+        await refreshJobs();
+      } catch (error) { addMessage('Run request failed', error.message, 'error'); notify(error.message, true); }
+      finally { setBusy(button, false); }
+    }
+
+    async function runNext() {
+      if (!state.verified) { notify('Check the COMSOL connection first.', true); return; }
+      const button = byId('quickRunNext'); button.disabled = true;
+      try {
+        const summary = await api('/api/queue/run-next', { method: 'POST', body: JSON.stringify({ connection: connectionPayload() }) });
+        const message = summary.processed ? `${summary.succeeded} succeeded, ${summary.failed} failed.` : 'The queue is empty.';
+        addMessage('Queue worker finished', message, summary.failed ? 'error' : 'success'); notify(message, Boolean(summary.failed)); await refreshJobs();
+      } catch (error) { addMessage('Worker failed', error.message, 'error'); notify(error.message, true); }
+      finally { button.disabled = false; }
+    }
+
+    async function refreshJobs() {
+      try {
+        const data = await api('/api/jobs'); state.jobs = data.jobs;
+        ['queued', 'running', 'succeeded', 'failed'].forEach(status => byId(`count${status[0].toUpperCase()}${status.slice(1)}`).textContent = data.counts[status] || 0);
+        renderJobs(); byId('updated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+      } catch (error) { byId('updated').textContent = 'Dashboard unavailable'; }
+    }
+
+    function renderJobs() {
+      const filter = byId('statusFilter').value;
+      const jobs = state.jobs.filter(job => filter === 'all' || job.status === filter);
+      const tbody = byId('jobs'); tbody.replaceChildren();
+      if (!jobs.length) { const row = tbody.insertRow(); const cell = row.insertCell(); cell.colSpan = 6; cell.className = 'empty-row'; cell.textContent = filter === 'all' ? 'No runs yet. Connect COMSOL to start one.' : `No ${filter} runs.`; return; }
+      jobs.forEach(job => {
+        const row = tbody.insertRow(); row.tabIndex = 0; row.setAttribute('aria-label', `Open job ${job.id}`);
+        const id = row.insertCell(); const code = document.createElement('code'); code.textContent = `#${job.id}`; id.append(code);
+        [job.batch_name, job.adapter].forEach(value => { const cell = row.insertCell(); cell.textContent = value; });
+        const statusCell = row.insertCell(); const badge = document.createElement('span'); badge.className = `status ${job.status}`; badge.textContent = job.status; statusCell.append(badge);
+        row.insertCell().textContent = job.attempts; row.insertCell().textContent = shortDate(job.created_at);
+        row.addEventListener('click', () => showJob(job.id)); row.addEventListener('keydown', event => { if (event.key === 'Enter') showJob(job.id); });
+      });
+    }
+
+    async function showJob(jobId) {
+      try {
+        const job = await api(`/api/jobs/${jobId}`); const body = byId('dialogBody'); body.replaceChildren(); byId('dialogTitle').textContent = `Job #${job.id} · ${job.batch_name}`;
+        const grid = document.createElement('div'); grid.className = 'detail-grid';
+        [['Status', job.status], ['Adapter', job.adapter], ['Attempts', job.attempts], ['Created', shortDate(job.created_at)]].forEach(([label, value]) => { const item = document.createElement('div'); item.className = 'detail'; const span = document.createElement('span'); span.textContent = label; const bold = document.createElement('b'); bold.textContent = value; item.append(span, bold); grid.append(item); });
+        body.append(grid);
+        appendObjectSection(body, 'Parameters', job.parameters);
+        if (job.result?.metrics) appendObjectSection(body, 'Result metrics', job.result.metrics);
+        if (job.artifact_dir) appendObjectSection(body, 'Artifacts', { directory: job.artifact_dir });
+        if (job.error) { const error = document.createElement('div'); error.className = 'error-box'; error.textContent = job.error; body.append(error); }
+        const raw = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Show raw job data';
+        const pre = document.createElement('pre'); pre.textContent = JSON.stringify(job, null, 2); raw.append(summary, pre); body.append(raw);
+        if (job.status === 'failed') { const retry = document.createElement('button'); retry.className = 'button secondary'; retry.style.marginTop = '14px'; retry.textContent = 'Retry this job'; retry.addEventListener('click', () => retryJob(job.id)); body.append(retry); }
+        byId('jobDialog').showModal();
+      } catch (error) { notify(error.message, true); }
+    }
+
+    function appendObjectSection(parent, title, values) {
+      if (!values || !Object.keys(values).length) return;
+      const section = document.createElement('section'); section.className = 'object-section';
+      const heading = document.createElement('h3'); heading.textContent = title;
+      const grid = document.createElement('div'); grid.className = 'kv-grid';
+      Object.entries(values).forEach(([name, value]) => {
+        const item = document.createElement('div'); item.className = 'kv';
+        const label = document.createElement('span'); label.textContent = name;
+        const code = document.createElement('code'); code.textContent = typeof value === 'object' ? JSON.stringify(value) : text(value);
+        item.append(label, code); grid.append(item);
+      });
+      section.append(heading, grid); parent.append(section);
+    }
+
+    async function retryJob(jobId) {
+      try { await api(`/api/jobs/${jobId}/retry`, { method: 'POST', body: '{}' }); byId('jobDialog').close(); addMessage(`Job #${jobId} requeued`, 'The failed run is ready to be processed again.', 'success'); await refreshJobs(); }
+      catch (error) { notify(error.message, true); }
+    }
+
+    function resetSession() {
+      byId('connectionForm').reset(); byId('timeout').value = 3600; setMode('study'); state.verified = false; state.report = null;
+      byId('modelCard').className = 'model-card'; byId('connectionState').textContent = 'Not checked'; byId('connectionState').className = 'connection-state';
+      byId('runNow').disabled = true; byId('queueOnly').disabled = true; byId('parameterList').replaceChildren(); renderEmptyParameters();
+      byId('assistantSummary').textContent = 'Start by selecting your local COMSOL model. I will inspect it before any run begins.'; addMessage('Session reset', 'No model path or connection setting was saved.', 'info'); loadDiscovery();
+    }
+
+    document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+    ['executable', 'modelPath', 'studyTag', 'jobTag', 'timeout', 'cores'].forEach(id => byId(id).addEventListener('input', markConnectionDirty));
+    byId('connectionForm').addEventListener('submit', event => { event.preventDefault(); checkConnection(); });
+    byId('resetButton').addEventListener('click', resetSession); byId('addParameter').addEventListener('click', () => addParameterRow());
+    byId('runNow').addEventListener('click', () => submitRun(true)); byId('queueOnly').addEventListener('click', () => submitRun(false));
+    byId('refreshButton').addEventListener('click', refreshJobs); byId('quickRefresh').addEventListener('click', refreshJobs); byId('quickCheck').addEventListener('click', checkConnection); byId('quickRunNext').addEventListener('click', runNext);
+    byId('statusFilter').addEventListener('change', renderJobs); byId('closeDialog').addEventListener('click', () => byId('jobDialog').close());
+    byId('batchName').value = `comsol-run-${new Date().toISOString().slice(0, 10)}`;
+    addMessage('Workspace ready', 'Connection details remain in memory for this local session only.', 'info');
+    loadDiscovery(); refreshJobs(); setInterval(refreshJobs, 5000);
+  </script>
+</body>
+</html>

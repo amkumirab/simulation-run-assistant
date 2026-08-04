@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     retry = subparsers.add_parser("retry", help="Requeue one failed job")
     retry.add_argument("job_id", type=int)
 
-    serve = subparsers.add_parser("serve", help="Start the local read-only dashboard")
+    serve = subparsers.add_parser("serve", help="Start the local assistant dashboard")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8080)
 
@@ -113,7 +113,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             store.retry(args.job_id)
             print(f"Job {args.job_id} was returned to the queue.")
         elif args.command == "serve":
-            serve_dashboard(args.database, args.host, args.port)
+            serve_dashboard(args.database, args.artifacts, args.host, args.port)
         elif args.command == "telegram-id":
             token = _required_environment("TELEGRAM_BOT_TOKEN")
             chats = discover_chat_ids(TelegramBotApi(token))

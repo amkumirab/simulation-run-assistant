@@ -11,7 +11,7 @@ Telegram notifications.
 
 > **Project status:** MVP / portfolio project. The included electromagnetic
 > adapter is a deterministic demo model, not an engineering solver. The COMSOL
-> integration is the next documented milestone.
+> adapter requires a local installation and compatible licenses.
 
 ## Why this project exists
 
@@ -28,7 +28,8 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Pluggable simulation adapter interface and official COMSOL batch bridge
 - Deterministic electromagnetic mock adapter for demos and CI
 - Per-job JSON results and dependency-free SVG response plots
-- Auto-refreshing, read-only local web dashboard
+- Guided local web assistant for COMSOL connection checks, run setup, queueing,
+  targeted execution, monitoring, details, and retries
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -48,8 +49,8 @@ flowchart LR
 ```
 
 The adapter boundary keeps solver-specific behavior out of the orchestration
-code. Adding COMSOL should not require changes to queueing, retries, reporting,
-or the dashboard.
+code. Adding another solver does not require changes to queueing, retries,
+reporting, or the dashboard.
 
 ## Quick start
 
@@ -86,8 +87,10 @@ Open the live dashboard in a second terminal:
 sim-assistant serve
 ```
 
-Then visit [http://127.0.0.1:8080](http://127.0.0.1:8080). The page refreshes
-every three seconds and the API is available at `/api/jobs`.
+Then visit [http://127.0.0.1:8080](http://127.0.0.1:8080). The guided workflow
+detects the COMSOL executable, checks an MPH model and its licenses, imports
+model parameters, and lets you queue or start a run. Model paths remain in the
+current browser session and are not saved by the dashboard.
 
 ## Batch manifests
 
@@ -233,7 +236,8 @@ src/simulation_assistant/
 ## Limitations
 
 - The worker is foreground-only and processes one job at a time.
-- The dashboard is read-only and intended for localhost use.
+- The interactive dashboard only binds to a loopback address. Its write API is
+  protected by a random in-memory token generated for each server session.
 - Secrets are read from the process environment; `.env` files are not loaded
   automatically.
 - The Telegram command bot is a foreground long-polling process.

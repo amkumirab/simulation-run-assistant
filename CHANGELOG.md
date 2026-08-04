@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-08-04
+
+### Added
+
+- Clean, responsive assistant workspace for connecting COMSOL and configuring runs
+- Local COMSOL discovery, model inspection, license checks, and parameter import
+- Dashboard actions for targeted runs, queue-only submissions, next-job processing,
+  job details, filtering, and failed-job retries
+- Per-session write token, request limits, security headers, and loopback-only binding
+- Dashboard API and selected-job runner tests
+
+### Changed
+
+- The dashboard is now an interactive workflow instead of a read-only status table
+- Package version increased to 0.3.0
+
 ## [0.2.0] - 2026-08-03
 
 ### Added

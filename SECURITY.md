@@ -18,6 +18,7 @@ disclosure.
 
 ## Deployment warning
 
-The included dashboard is read-only but has no authentication. It is intended
-for localhost use and should not be exposed to an untrusted network without an
-authentication and transport-security layer.
+The interactive dashboard only accepts loopback bindings and protects write
+requests with a random, in-memory session token. This is a local safety boundary,
+not user authentication. Do not proxy or expose the dashboard to an untrusted
+network without a proper authentication and transport-security layer.

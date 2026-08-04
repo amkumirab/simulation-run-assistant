@@ -105,6 +105,30 @@ class JobStore:
             connection.commit()
         return self.get(int(row["id"]))
 
+    def claim(self, job_id: int) -> Job:
+        """Atomically move one specific queued job to running."""
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT status FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Job {job_id} was not found")
+            if row["status"] != JobStatus.QUEUED.value:
+                raise ValueError(f"Job {job_id} is not queued")
+
+            connection.execute(
+                """
+                UPDATE jobs
+                SET status = ?, started_at = ?, finished_at = NULL,
+                    error = NULL, attempts = attempts + 1
+                WHERE id = ?
+                """,
+                (JobStatus.RUNNING.value, utc_now(), job_id),
+            )
+            connection.commit()
+        return self.get(job_id)
+
     def mark_succeeded(
         self,
         job_id: int,

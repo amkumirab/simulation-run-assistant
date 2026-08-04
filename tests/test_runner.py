@@ -61,6 +61,22 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(summary.failed, 1)
         self.assertEqual(summary.succeeded, 1)
 
+    def test_runs_one_selected_job_without_consuming_the_queue(self) -> None:
+        first_id = self.store.enqueue_batch(
+            "first", "mock-em", [{"frequency_ghz": 8}]
+        )[0]
+        selected_id = self.store.enqueue_batch(
+            "selected", "mock-em", [{"frequency_ghz": 12}]
+        )[0]
+
+        summary = SimulationRunner(self.store, self.root / "artifacts").run_job(
+            selected_id
+        )
+
+        self.assertEqual(summary.succeeded, 1)
+        self.assertEqual(self.store.get(first_id).status, JobStatus.QUEUED)
+        self.assertEqual(self.store.get(selected_id).status, JobStatus.SUCCEEDED)
+
 
 if __name__ == "__main__":
     unittest.main()

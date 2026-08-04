@@ -64,6 +64,30 @@ sim-assistant comsol-check `
   --cores 4
 ```
 
+## Guided dashboard workflow
+
+Start the local assistant:
+
+```powershell
+sim-assistant serve
+```
+
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080), then:
+
+1. Confirm the auto-detected `comsolbatch.exe` path and select an MPH model.
+2. Choose a study or job-sequence tag, timeout, and optional core count.
+3. Select **Check connection** to inspect the model and validate licenses.
+4. Review the imported global parameters and edit the values for this run.
+5. Select **Run now** for a targeted foreground run or **Queue only** to leave
+   it for the worker.
+6. Open any row in the run queue to inspect its parameters, results, artifact
+   directory, or error. Failed runs can be returned to the queue from here.
+
+The dashboard is intentionally local-only. The model path is sent to the local
+Python process for the requested check or run but is not written to a settings
+file. A random in-memory token protects write actions for the lifetime of each
+dashboard session.
+
 ## Enqueue a COMSOL job
 
 Create a manifest whose parameter names exactly match COMSOL global parameters.
