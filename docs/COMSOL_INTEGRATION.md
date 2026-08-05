@@ -88,6 +88,49 @@ Python process for the requested check or run but is not written to a settings
 file. A random in-memory token protects write actions for the lifetime of each
 dashboard session.
 
+## Native desktop workflow
+
+The native assistant provides the same local COMSOL workflow without starting
+the dashboard server:
+
+```powershell
+sim-assistant desktop
+```
+
+Use the native file picker to select `comsolbatch.exe` and an MPH model. After a
+successful connection check, the app loads global parameters into editable
+fields and catalogs numeric symbols from saved single-row COMSOL tables. Define
+optional computed outputs, run or queue the model, and use **Compare runs** to
+inspect one metric across different input states.
+
+Supported formula operations are `+`, `-`, `*`, `/`, `%`, and `**`. Supported
+functions include `abs`, `sqrt`, `log`, `log10`, `exp`, `sin`, `cos`, `tan`,
+`min`, and `max`; constants `pi` and `e` are also available. Formulas are parsed
+by a restricted evaluator and cannot import modules, access attributes, execute
+statements, or call arbitrary code.
+
+Formula errors do not discard a successful COMSOL solution. Successfully
+computed values are added to result metrics, while individual formula errors
+are stored in result metadata and shown in the run-details window.
+
+### Fresh physical outputs
+
+The symbols shown from an MPH model initially describe saved table columns and
+may represent an older solution. A `-study` run computes the selected Study but
+does not automatically reevaluate every Derived Values node. The adapter
+therefore keeps those saved values out of fresh metrics.
+
+For formulas based on inductance, coupling, power, efficiency, or other physical
+results, create a COMSOL job sequence containing:
+
+1. The required Solution step.
+2. **Evaluate Derived Values** for the numerical result nodes.
+3. A Save step when needed by the model contract.
+
+Select **Job sequence** in the native app and enter that job tag. Metrics
+extracted from the reevaluated tables can then be used by computed-output
+formulas and compared across runs.
+
 ## Enqueue a COMSOL job
 
 Create a manifest whose parameter names exactly match COMSOL global parameters.

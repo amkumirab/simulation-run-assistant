@@ -10,6 +10,7 @@ from simulation_assistant.adapters.comsol import (
     ComsolAdapter,
     ComsolConfig,
     check_comsol,
+    catalog_mph_output_symbols,
     extract_mph_tables,
     inspect_mph,
 )
@@ -126,7 +127,15 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(report["status"], "ok")
         self.assertEqual(report["selected_study"], "std1")
         self.assertEqual(report["license_requirements"], ["COMSOL", "ACDC"])
+        self.assertEqual(report["output_symbols"][0]["key"], "tbl1_1_frequency_hz")
         self.assertEqual(len(fake_process.commands), 2)
+
+    def test_catalogs_formula_symbols_from_scalar_tables(self) -> None:
+        symbols = catalog_mph_output_symbols(self.model)
+
+        self.assertEqual(len(symbols), 2)
+        self.assertEqual(symbols[1]["column"], "value (H)")
+        self.assertEqual(symbols[1]["saved_value"], 1.2e-7)
 
 
 def _write_test_mph(path: Path) -> None:

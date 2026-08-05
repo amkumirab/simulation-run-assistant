@@ -30,6 +30,8 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Per-job JSON results and dependency-free SVG response plots
 - Guided local web assistant for COMSOL connection checks, run setup, queueing,
   targeted execution, monitoring, details, and retries
+- Native desktop assistant with no browser or local web server requirement
+- Safe custom output formulas and comparison across successful simulation states
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -92,6 +94,32 @@ detects the COMSOL executable, checks an MPH model and its licenses, imports
 model parameters, and lets you queue or start a run. Model paths remain in the
 current browser session and are not saved by the dashboard.
 
+### Native desktop mode
+
+On a workstation with Tkinter available (included with standard Windows Python),
+start the native application instead of the web dashboard:
+
+```powershell
+sim-assistant desktop
+```
+
+The desktop workspace provides native file pickers, COMSOL validation, editable
+model inputs, computed-output formulas, Run now and Queue only actions, run
+details, local artifact access, and a comparison table for repeated simulation
+states. It does not start an HTTP server or require a browser.
+
+Computed outputs are safe arithmetic expressions over normalized numeric result
+metrics. For example:
+
+```text
+solve_time_ratio = comsol_duration_seconds / comsol_reported_total_seconds
+coupling = mutual_inductance / sqrt(primary_inductance * secondary_inductance)
+```
+
+Physical output symbols from COMSOL tables are fresh only when a COMSOL job
+sequence reevaluates Derived Values after solving. Study-only runs deliberately
+exclude saved tables from fresh metrics.
+
 ## Batch manifests
 
 A compact sweep creates one job for every combination:
@@ -124,6 +152,7 @@ sim-assistant list [--status STATUS]   List recent jobs
 sim-assistant show JOB_ID              Print one complete job as JSON
 sim-assistant retry JOB_ID             Requeue a failed job
 sim-assistant serve [--port 8080]      Start the local dashboard
+sim-assistant desktop                  Start the native desktop assistant
 sim-assistant telegram-id              Discover recent Telegram chat IDs
 sim-assistant bot                      Run the authorized Telegram command bot
 sim-assistant comsol-check             Inspect COMSOL and MPH license requirements
@@ -223,6 +252,8 @@ future commits:
 src/simulation_assistant/
 |-- adapters/       # Solver boundary, mock model, COMSOL batch adapter
 |-- cli.py          # Command-line interface
+|-- desktop.py      # Native Tkinter assistant
+|-- formulas.py     # Safe computed-output expression engine
 |-- manifest.py     # JSON validation and sweep expansion
 |-- notifications.py
 |-- telegram_api.py # Minimal Telegram Bot API client
@@ -236,6 +267,8 @@ src/simulation_assistant/
 ## Limitations
 
 - The worker is foreground-only and processes one job at a time.
+- The native interface runs COMSOL work in background threads but processes
+  queue jobs sequentially to respect local license-seat constraints.
 - The interactive dashboard only binds to a loopback address. Its write API is
   protected by a random in-memory token generated for each server session.
 - Secrets are read from the process environment; `.env` files are not loaded

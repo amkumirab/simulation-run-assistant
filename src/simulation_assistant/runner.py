@@ -10,9 +10,10 @@ from simulation_assistant.adapters import (
     SimulationAdapter,
 )
 from simulation_assistant.notifications import Notifier, NullNotifier
+from simulation_assistant.formulas import evaluate_output_formulas
 from simulation_assistant.reporting import write_artifacts
 from simulation_assistant.storage import JobStore
-from simulation_assistant.types import Job
+from simulation_assistant.types import Job, SimulationResult
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,18 @@ class SimulationRunner:
                 )
             work_dir = self.artifact_root / f"job-{job.id:06d}"
             result = adapter.run(job.parameters, work_dir=work_dir)
+            if job.output_formulas:
+                evaluation = evaluate_output_formulas(
+                    job.output_formulas, result.metrics
+                )
+                metadata = dict(result.metadata)
+                metadata["output_formulas"] = job.output_formulas
+                metadata["formula_errors"] = evaluation.errors
+                result = SimulationResult(
+                    metrics={**result.metrics, **evaluation.values},
+                    series=result.series,
+                    metadata=metadata,
+                )
             artifact_dir = write_artifacts(self.artifact_root, job, result)
             self.store.mark_succeeded(job.id, result.to_dict(), str(artifact_dir))
             self._notify_safely(

@@ -1,0 +1,1229 @@
+from __future__ import annotations
+
+import os
+import threading
+import tkinter as tk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
+from typing import Any, Callable
+
+from simulation_assistant.adapters import ComsolAdapter, MockElectromagneticAdapter
+from simulation_assistant.adapters.comsol import (
+    ComsolConfig,
+    check_comsol,
+    discover_comsol_executable,
+)
+from simulation_assistant.formulas import (
+    supported_formula_symbols,
+    validate_output_formulas,
+)
+from simulation_assistant.notifications import notifier_from_environment
+from simulation_assistant.runner import SimulationRunner
+from simulation_assistant.storage import JobStore
+from simulation_assistant.types import Job, JobStatus
+
+
+COLORS = {
+    "canvas": "#f3f6f8",
+    "surface": "#ffffff",
+    "soft": "#f7f9fb",
+    "navy": "#16324a",
+    "navy_soft": "#24465f",
+    "ink": "#172630",
+    "muted": "#667681",
+    "line": "#dce4e8",
+    "blue": "#246bfe",
+    "blue_soft": "#eaf1ff",
+    "teal": "#087f78",
+    "teal_soft": "#e5f6f3",
+    "amber": "#95620b",
+    "amber_soft": "#fff4d8",
+    "red": "#b42318",
+    "red_soft": "#feeceb",
+}
+
+BUILTIN_OUTPUT_SYMBOLS = [
+    ("comsol_duration_seconds", "Application wall-clock time"),
+    ("comsol_reported_run_seconds", "COMSOL reported run time"),
+    ("comsol_reported_total_seconds", "COMSOL reported total time"),
+    ("degrees_of_freedom", "Solved degrees of freedom"),
+    ("output_model_bytes", "Output MPH file size"),
+]
+
+
+class ScrollableFrame(ttk.Frame):
+    def __init__(self, parent: tk.Misc, height: int = 220) -> None:
+        super().__init__(parent, style="Card.TFrame")
+        self.canvas = tk.Canvas(
+            self,
+            height=height,
+            background=COLORS["surface"],
+            highlightthickness=0,
+        )
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = ttk.Frame(self.canvas, style="Card.TFrame")
+        self.window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.inner.bind("<Configure>", self._update_scroll_region)
+        self.canvas.bind("<Configure>", self._resize_inner)
+
+    def _update_scroll_region(self, _event: tk.Event) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _resize_inner(self, event: tk.Event) -> None:
+        self.canvas.itemconfigure(self.window, width=event.width)
+
+
+class DesktopApp:
+    def __init__(
+        self,
+        root: tk.Tk,
+        database_path: str | Path,
+        artifact_root: str | Path,
+    ) -> None:
+        self.root = root
+        self.store = JobStore(database_path)
+        self.store.initialize()
+        self.artifact_root = Path(artifact_root)
+        self.connection_report: dict[str, Any] | None = None
+        self.parameter_variables: dict[str, tk.StringVar] = {}
+        self.formula_rows: list[tuple[ttk.Frame, tk.StringVar, tk.StringVar]] = []
+        self.active_formula_entry: ttk.Entry | None = None
+        self.busy = False
+        self._ignore_connection_changes = False
+
+        self._configure_window()
+        self._configure_styles()
+        self._create_variables()
+        self._build_layout()
+        self._load_defaults()
+        self.refresh_jobs()
+
+    def _configure_window(self) -> None:
+        self.root.title("Simulation Run Assistant")
+        self.root.geometry("1320x860")
+        self.root.minsize(1060, 700)
+        self.root.configure(background=COLORS["canvas"])
+
+    def _configure_styles(self) -> None:
+        style = ttk.Style(self.root)
+        if "clam" in style.theme_names():
+            style.theme_use("clam")
+        style.configure("App.TFrame", background=COLORS["canvas"])
+        style.configure("Card.TFrame", background=COLORS["surface"])
+        style.configure(
+            "Title.TLabel",
+            background=COLORS["canvas"],
+            foreground=COLORS["ink"],
+            font=("Segoe UI Semibold", 24),
+        )
+        style.configure(
+            "Subtitle.TLabel",
+            background=COLORS["canvas"],
+            foreground=COLORS["muted"],
+            font=("Segoe UI", 10),
+        )
+        style.configure(
+            "CardTitle.TLabel",
+            background=COLORS["surface"],
+            foreground=COLORS["ink"],
+            font=("Segoe UI Semibold", 12),
+        )
+        style.configure(
+            "CardText.TLabel",
+            background=COLORS["surface"],
+            foreground=COLORS["muted"],
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "Field.TLabel",
+            background=COLORS["surface"],
+            foreground="#34454f",
+            font=("Segoe UI Semibold", 9),
+        )
+        style.configure(
+            "Primary.TButton",
+            background=COLORS["blue"],
+            foreground="white",
+            borderwidth=0,
+            padding=(15, 9),
+            font=("Segoe UI Semibold", 9),
+        )
+        style.map(
+            "Primary.TButton",
+            background=[("active", "#195fe7"), ("disabled", "#9bb9f8")],
+        )
+        style.configure(
+            "Secondary.TButton",
+            background=COLORS["surface"],
+            foreground=COLORS["ink"],
+            bordercolor="#cbd6dc",
+            padding=(13, 8),
+            font=("Segoe UI Semibold", 9),
+        )
+        style.map("Secondary.TButton", background=[("active", COLORS["soft"])])
+        style.configure("TEntry", padding=8, fieldbackground="white")
+        style.configure("TCombobox", padding=7, fieldbackground="white")
+        style.configure(
+            "Treeview",
+            rowheight=29,
+            background="white",
+            fieldbackground="white",
+            foreground=COLORS["ink"],
+            bordercolor=COLORS["line"],
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=COLORS["soft"],
+            foreground=COLORS["muted"],
+            font=("Segoe UI Semibold", 8),
+            padding=8,
+        )
+        style.map("Treeview", background=[("selected", COLORS["blue_soft"])])
+        style.configure("TNotebook", background=COLORS["canvas"], borderwidth=0)
+        style.configure(
+            "TNotebook.Tab",
+            padding=(16, 9),
+            font=("Segoe UI Semibold", 9),
+        )
+
+    def _create_variables(self) -> None:
+        self.executable_var = tk.StringVar()
+        self.model_var = tk.StringVar()
+        self.target_mode_var = tk.StringVar(value="study")
+        self.study_var = tk.StringVar()
+        self.job_var = tk.StringVar()
+        self.timeout_var = tk.StringVar(value="3600")
+        self.cores_var = tk.StringVar()
+        self.batch_var = tk.StringVar(value="desktop-comsol-run")
+        self.connection_status_var = tk.StringVar(value="Not checked")
+        self.activity_var = tk.StringVar(
+            value="Choose a COMSOL model, then validate the connection."
+        )
+        self.model_summary_var = tk.StringVar(value="No model connected")
+        self.freshness_var = tk.StringVar(
+            value="Study runs provide fresh solver metrics. Use a COMSOL job sequence "
+            "with Evaluate Derived Values for fresh physical output symbols."
+        )
+        self.compare_metric_var = tk.StringVar()
+
+        for variable in (
+            self.executable_var,
+            self.model_var,
+            self.target_mode_var,
+            self.study_var,
+            self.job_var,
+            self.timeout_var,
+            self.cores_var,
+        ):
+            variable.trace_add("write", self._connection_changed)
+
+    def _build_layout(self) -> None:
+        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_rowconfigure(0, weight=1)
+        self._build_sidebar()
+
+        content = ttk.Frame(self.root, style="App.TFrame", padding=(30, 24, 30, 28))
+        content.grid(row=0, column=1, sticky="nsew")
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_rowconfigure(1, weight=1)
+
+        header = ttk.Frame(content, style="App.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 18))
+        header.grid_columnconfigure(0, weight=1)
+        ttk.Label(
+            header,
+            text="Native COMSOL workspace",
+            style="Title.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            header,
+            text="Connect, define computed outputs, run, and compare without a web server.",
+            style="Subtitle.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.status_label = tk.Label(
+            header,
+            textvariable=self.connection_status_var,
+            background=COLORS["amber_soft"],
+            foreground=COLORS["amber"],
+            padx=12,
+            pady=6,
+            font=("Segoe UI Semibold", 9),
+        )
+        self.status_label.grid(row=0, column=1, rowspan=2, sticky="e")
+
+        self.notebook = ttk.Notebook(content)
+        self.notebook.grid(row=1, column=0, sticky="nsew")
+        workspace = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 12, 0, 0))
+        runs = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 12, 0, 0))
+        compare = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 12, 0, 0))
+        self.notebook.add(workspace, text="Workspace")
+        self.notebook.add(runs, text="Runs")
+        self.notebook.add(compare, text="Compare runs")
+        self._build_workspace(workspace)
+        self._build_runs_tab(runs)
+        self._build_compare(compare)
+
+    def _build_sidebar(self) -> None:
+        sidebar = tk.Frame(self.root, background=COLORS["navy"], width=226)
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_propagate(False)
+        brand = tk.Frame(sidebar, background=COLORS["navy"])
+        brand.pack(fill="x", padx=22, pady=(28, 30))
+        tk.Label(
+            brand,
+            text="SRA",
+            background=COLORS["blue"],
+            foreground="white",
+            width=4,
+            height=2,
+            font=("Segoe UI Semibold", 9),
+        ).pack(side="left")
+        tk.Label(
+            brand,
+            text="Simulation\nAssistant",
+            justify="left",
+            background=COLORS["navy"],
+            foreground="white",
+            font=("Segoe UI Semibold", 11),
+        ).pack(side="left", padx=(11, 0))
+
+        for number, title in (
+            ("1", "Connect COMSOL"),
+            ("2", "Configure inputs"),
+            ("3", "Define outputs"),
+            ("4", "Run and compare"),
+        ):
+            item = tk.Frame(sidebar, background=COLORS["navy_soft"], padx=12, pady=10)
+            item.pack(fill="x", padx=17, pady=4)
+            tk.Label(
+                item,
+                text=number,
+                background="#315771",
+                foreground="#d9e8f2",
+                width=2,
+                font=("Segoe UI Semibold", 9),
+            ).pack(side="left")
+            tk.Label(
+                item,
+                text=title,
+                background=COLORS["navy_soft"],
+                foreground="#d9e8f2",
+                font=("Segoe UI", 9),
+            ).pack(side="left", padx=(10, 0))
+
+        assistant = tk.Frame(sidebar, background=COLORS["navy"], padx=22, pady=20)
+        assistant.pack(side="bottom", fill="x")
+        tk.Label(
+            assistant,
+            text="RUN ASSISTANT",
+            background=COLORS["navy"],
+            foreground="#85b7ff",
+            font=("Segoe UI Semibold", 8),
+        ).pack(anchor="w")
+        tk.Label(
+            assistant,
+            textvariable=self.activity_var,
+            wraplength=175,
+            justify="left",
+            background=COLORS["navy"],
+            foreground="#b8cbd7",
+            font=("Segoe UI", 9),
+        ).pack(anchor="w", pady=(8, 0))
+
+    def _build_workspace(self, parent: ttk.Frame) -> None:
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
+        self._build_connection_card(parent)
+
+        editor_grid = ttk.Frame(parent, style="App.TFrame")
+        editor_grid.grid(row=1, column=0, sticky="nsew", pady=(14, 14))
+        editor_grid.grid_columnconfigure(0, weight=1, uniform="editor")
+        editor_grid.grid_columnconfigure(1, weight=1, uniform="editor")
+        self._build_parameters_card(editor_grid)
+        self._build_formulas_card(editor_grid)
+        self._build_action_bar(parent)
+
+    def _build_connection_card(self, parent: ttk.Frame) -> None:
+        card = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        card.grid(row=0, column=0, sticky="ew")
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_columnconfigure(1, weight=1)
+        card.grid_columnconfigure(2, weight=1)
+        card.grid_columnconfigure(3, weight=1)
+
+        ttk.Label(card, text="1  Connect COMSOL", style="CardTitle.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w"
+        )
+        ttk.Label(
+            card,
+            textvariable=self.model_summary_var,
+            style="CardText.TLabel",
+        ).grid(row=0, column=3, sticky="e")
+
+        self._field_label(card, "COMSOL executable", 1, 0)
+        executable = ttk.Entry(card, textvariable=self.executable_var)
+        executable.grid(row=2, column=0, columnspan=3, sticky="ew", padx=(0, 8))
+        ttk.Button(
+            card,
+            text="Browse",
+            style="Secondary.TButton",
+            command=self._browse_executable,
+        ).grid(row=2, column=3, sticky="ew")
+
+        self._field_label(card, "MPH model", 3, 0)
+        model = ttk.Entry(card, textvariable=self.model_var)
+        model.grid(row=4, column=0, columnspan=3, sticky="ew", padx=(0, 8))
+        ttk.Button(
+            card,
+            text="Browse",
+            style="Secondary.TButton",
+            command=self._browse_model,
+        ).grid(row=4, column=3, sticky="ew")
+
+        mode_frame = ttk.Frame(card, style="Card.TFrame")
+        mode_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(13, 0))
+        mode_frame.grid_columnconfigure(1, weight=1)
+        mode_frame.grid_columnconfigure(3, weight=1)
+        ttk.Radiobutton(
+            mode_frame,
+            text="Study",
+            value="study",
+            variable=self.target_mode_var,
+            command=self._toggle_target,
+        ).grid(row=0, column=0, sticky="w")
+        self.study_entry = ttk.Combobox(
+            mode_frame,
+            textvariable=self.study_var,
+            state="normal",
+        )
+        self.study_entry.grid(row=0, column=1, sticky="ew", padx=(7, 16))
+        ttk.Radiobutton(
+            mode_frame,
+            text="Job sequence",
+            value="job",
+            variable=self.target_mode_var,
+            command=self._toggle_target,
+        ).grid(row=0, column=2, sticky="w")
+        self.job_entry = ttk.Entry(mode_frame, textvariable=self.job_var)
+        self.job_entry.grid(row=0, column=3, sticky="ew", padx=(7, 16))
+        ttk.Label(mode_frame, text="Timeout", style="Field.TLabel").grid(
+            row=0, column=4, sticky="w"
+        )
+        ttk.Entry(mode_frame, width=8, textvariable=self.timeout_var).grid(
+            row=0, column=5, padx=(7, 12)
+        )
+        ttk.Label(mode_frame, text="Cores", style="Field.TLabel").grid(
+            row=0, column=6, sticky="w"
+        )
+        ttk.Entry(mode_frame, width=6, textvariable=self.cores_var).grid(
+            row=0, column=7, padx=(7, 12)
+        )
+        self.check_button = ttk.Button(
+            mode_frame,
+            text="Check connection",
+            style="Primary.TButton",
+            command=self.check_connection,
+        )
+        self.check_button.grid(row=0, column=8)
+        self._toggle_target()
+
+    def _build_parameters_card(self, parent: ttk.Frame) -> None:
+        card = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        card.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+        card.grid_columnconfigure(0, weight=1)
+        ttk.Label(card, text="2  Model inputs", style="CardTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            card,
+            text="Global parameters detected in the MPH model.",
+            style="CardText.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(3, 12))
+        self.parameters_frame = ScrollableFrame(card, height=210)
+        self.parameters_frame.grid(row=2, column=0, sticky="nsew")
+        card.grid_rowconfigure(2, weight=1)
+        self._show_empty_parameters()
+
+    def _build_formulas_card(self, parent: ttk.Frame) -> None:
+        card = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        card.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_rowconfigure(3, weight=1)
+        top = ttk.Frame(card, style="Card.TFrame")
+        top.grid(row=0, column=0, sticky="ew")
+        top.grid_columnconfigure(0, weight=1)
+        ttk.Label(top, text="3  Computed outputs", style="CardTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Button(
+            top,
+            text="+ Add formula",
+            style="Secondary.TButton",
+            command=self.add_formula_row,
+        ).grid(row=0, column=1, sticky="e")
+        ttk.Label(
+            card,
+            text="Use metric symbols with +, -, *, /, **, sqrt, log, min, or max.",
+            style="CardText.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(3, 10))
+        self.formulas_frame = ScrollableFrame(card, height=105)
+        self.formulas_frame.grid(row=2, column=0, sticky="ew")
+        self.add_formula_row()
+
+        symbols_frame = ttk.Frame(card, style="Card.TFrame")
+        symbols_frame.grid(row=3, column=0, sticky="nsew", pady=(11, 0))
+        symbols_frame.grid_columnconfigure(0, weight=1)
+        symbols_frame.grid_rowconfigure(1, weight=1)
+        ttk.Label(
+            symbols_frame,
+            text="Available output symbols — double-click to insert",
+            style="Field.TLabel",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 5))
+        self.symbols_tree = ttk.Treeview(
+            symbols_frame,
+            columns=("symbol", "source", "saved"),
+            show="headings",
+            height=5,
+        )
+        self.symbols_tree.heading("symbol", text="SYMBOL")
+        self.symbols_tree.heading("source", text="SOURCE")
+        self.symbols_tree.heading("saved", text="SAVED VALUE")
+        self.symbols_tree.column("symbol", width=210, stretch=True)
+        self.symbols_tree.column("source", width=120)
+        self.symbols_tree.column("saved", width=100, anchor="e")
+        self.symbols_tree.grid(row=1, column=0, sticky="nsew")
+        self.symbols_tree.bind("<Double-1>", self._insert_selected_symbol)
+        self._populate_builtin_symbols()
+
+    def _build_action_bar(self, parent: ttk.Frame) -> None:
+        card = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        card.grid(row=2, column=0, sticky="ew")
+        card.grid_columnconfigure(0, weight=1)
+        title = ttk.Frame(card, style="Card.TFrame")
+        title.grid(row=0, column=0, sticky="ew")
+        title.grid_columnconfigure(1, weight=1)
+        ttk.Label(title, text="4  Ready to simulate", style="CardTitle.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 12)
+        )
+        ttk.Label(title, textvariable=self.freshness_var, style="CardText.TLabel").grid(
+            row=0, column=1, sticky="w"
+        )
+        actions = ttk.Frame(card, style="Card.TFrame")
+        actions.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        ttk.Label(actions, text="Run label", style="Field.TLabel").pack(side="left")
+        ttk.Entry(actions, textvariable=self.batch_var, width=34).pack(
+            side="left", padx=(8, 16)
+        )
+        self.run_now_button = ttk.Button(
+            actions,
+            text="Run now",
+            style="Primary.TButton",
+            command=lambda: self.submit_run(start=True),
+            state="disabled",
+        )
+        self.run_now_button.pack(side="left")
+        self.queue_button = ttk.Button(
+            actions,
+            text="Queue only",
+            style="Secondary.TButton",
+            command=lambda: self.submit_run(start=False),
+            state="disabled",
+        )
+        self.queue_button.pack(side="left", padx=(8, 0))
+        self.run_next_button = ttk.Button(
+            actions,
+            text="Run next",
+            style="Secondary.TButton",
+            command=self.run_next,
+            state="disabled",
+        )
+        self.run_next_button.pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Open run queue",
+            style="Secondary.TButton",
+            command=lambda: self.notebook.select(1),
+        ).pack(side="right")
+
+    def _build_runs_tab(self, parent: ttk.Frame) -> None:
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(0, weight=1)
+        card = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        card.grid(row=0, column=0, sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_rowconfigure(1, weight=1)
+        toolbar = ttk.Frame(card, style="Card.TFrame")
+        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        toolbar.grid_columnconfigure(0, weight=1)
+        ttk.Label(toolbar, text="Local run queue", style="CardTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            toolbar,
+            text="Double-click a run to inspect inputs, formulas, metrics, and errors.",
+            style="CardText.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(3, 0))
+        ttk.Button(
+            toolbar,
+            text="Refresh",
+            style="Secondary.TButton",
+            command=self.refresh_jobs,
+        ).grid(row=0, column=1, rowspan=2, sticky="e")
+
+        self.jobs_tree = ttk.Treeview(
+            card,
+            columns=("id", "batch", "status", "adapter", "attempts", "created"),
+            show="headings",
+            height=7,
+        )
+        headings = {
+            "id": "ID",
+            "batch": "RUN",
+            "status": "STATUS",
+            "adapter": "ADAPTER",
+            "attempts": "ATTEMPTS",
+            "created": "CREATED",
+        }
+        widths = {"id": 60, "batch": 270, "status": 100, "adapter": 100, "attempts": 80, "created": 170}
+        for column, heading in headings.items():
+            self.jobs_tree.heading(column, text=heading)
+            self.jobs_tree.column(
+                column,
+                width=widths[column],
+                stretch=column in {"batch", "created"},
+            )
+        self.jobs_tree.grid(row=1, column=0, sticky="nsew")
+        self.jobs_tree.bind("<Double-1>", self._open_selected_job)
+
+    def _build_compare(self, parent: ttk.Frame) -> None:
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(1, weight=1)
+        header = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        header.grid_columnconfigure(1, weight=1)
+        ttk.Label(header, text="Compare computed outputs", style="CardTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(header, text="Output metric", style="Field.TLabel").grid(
+            row=0, column=1, sticky="e", padx=(10, 7)
+        )
+        self.compare_metric = ttk.Combobox(
+            header,
+            textvariable=self.compare_metric_var,
+            state="readonly",
+            width=34,
+        )
+        self.compare_metric.grid(row=0, column=2, sticky="e")
+        self.compare_metric.bind("<<ComboboxSelected>>", self._refresh_comparison_rows)
+        ttk.Button(
+            header,
+            text="Refresh",
+            style="Secondary.TButton",
+            command=self.refresh_comparison,
+        ).grid(row=0, column=3, padx=(8, 0))
+
+        card = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        card.grid(row=1, column=0, sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_rowconfigure(1, weight=1)
+        ttk.Label(
+            card,
+            text="Each row is one successful simulation state. Change inputs, run again, "
+            "then compare the selected output here.",
+            style="CardText.TLabel",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        self.compare_tree = ttk.Treeview(
+            card,
+            columns=("id", "batch", "parameters", "value", "finished"),
+            show="headings",
+        )
+        for column, heading, width in (
+            ("id", "JOB", 65),
+            ("batch", "RUN", 230),
+            ("parameters", "INPUT STATE", 470),
+            ("value", "OUTPUT VALUE", 150),
+            ("finished", "FINISHED", 170),
+        ):
+            self.compare_tree.heading(column, text=heading)
+            self.compare_tree.column(
+                column,
+                width=width,
+                stretch=column in {"batch", "parameters"},
+            )
+        self.compare_tree.grid(row=1, column=0, sticky="nsew")
+
+    def _field_label(self, parent: ttk.Frame, text: str, row: int, column: int) -> None:
+        ttk.Label(parent, text=text, style="Field.TLabel").grid(
+            row=row,
+            column=column,
+            columnspan=4,
+            sticky="w",
+            pady=(11, 5),
+        )
+
+    def _load_defaults(self) -> None:
+        self._ignore_connection_changes = True
+        try:
+            executable = os.getenv("COMSOL_EXECUTABLE")
+            if not executable:
+                try:
+                    executable = str(discover_comsol_executable())
+                except ValueError:
+                    executable = ""
+            self.executable_var.set(executable)
+            self.model_var.set(os.getenv("COMSOL_MODEL_PATH", ""))
+            self.study_var.set(os.getenv("COMSOL_STUDY_TAG", ""))
+            self.job_var.set(os.getenv("COMSOL_JOB_TAG", ""))
+            self.timeout_var.set(os.getenv("COMSOL_TIMEOUT_SECONDS", "3600"))
+            self.cores_var.set(os.getenv("COMSOL_CORES", ""))
+            if self.job_var.get():
+                self.target_mode_var.set("job")
+            self._toggle_target()
+        finally:
+            self._ignore_connection_changes = False
+        if self.executable_var.get():
+            self.activity_var.set(
+                "COMSOL was detected. Choose an MPH model and check the connection."
+            )
+
+    def _browse_executable(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select COMSOL batch executable",
+            filetypes=[("COMSOL batch executable", "comsolbatch.exe"), ("All files", "*")],
+        )
+        if selected:
+            self.executable_var.set(selected)
+
+    def _browse_model(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select COMSOL model",
+            filetypes=[("COMSOL model", "*.mph"), ("All files", "*")],
+        )
+        if selected:
+            self.model_var.set(selected)
+
+    def _toggle_target(self) -> None:
+        if self.target_mode_var.get() == "job":
+            self.study_entry.configure(state="disabled")
+            self.job_entry.configure(state="normal")
+            self.freshness_var.set(
+                "Job sequence mode can provide fresh Derived Values when configured in COMSOL."
+            )
+        else:
+            self.study_entry.configure(state="normal")
+            self.job_entry.configure(state="disabled")
+            self.freshness_var.set(
+                "Study mode keeps saved table values out of fresh output formulas."
+            )
+
+    def _connection_changed(self, *_args: object) -> None:
+        if self._ignore_connection_changes or self.connection_report is None:
+            return
+        self.connection_report = None
+        self.connection_status_var.set("Needs recheck")
+        self.status_label.configure(
+            background=COLORS["amber_soft"], foreground=COLORS["amber"]
+        )
+        self._set_run_actions(False)
+        self.activity_var.set("Connection settings changed. Validate COMSOL again.")
+
+    def _build_config(self) -> ComsolConfig:
+        timeout = self._positive_int(self.timeout_var.get(), "Timeout")
+        cores_text = self.cores_var.get().strip()
+        cores = self._positive_int(cores_text, "Core count") if cores_text else None
+        mode = self.target_mode_var.get()
+        config = ComsolConfig(
+            executable=Path(self.executable_var.get().strip()),
+            model_path=Path(self.model_var.get().strip()),
+            study_tag=self.study_var.get().strip() or None if mode == "study" else None,
+            job_tag=self.job_var.get().strip() or None if mode == "job" else None,
+            timeout_seconds=timeout,
+            cores=cores,
+        )
+        config.validate()
+        return config
+
+    @staticmethod
+    def _positive_int(value: str, label: str) -> int:
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            raise ValueError(f"{label} must be a positive integer") from exc
+        if parsed < 1:
+            raise ValueError(f"{label} must be a positive integer")
+        return parsed
+
+    def check_connection(self) -> None:
+        try:
+            config = self._build_config()
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Connection settings", str(exc), parent=self.root)
+            return
+        self.connection_report = None
+        self._set_run_actions(False)
+        self.connection_status_var.set("Checking...")
+        self.activity_var.set("Inspecting the model and validating COMSOL licenses...")
+        self._run_background(
+            "check",
+            lambda: check_comsol(config),
+            lambda report: self._connection_ready(config, report),
+        )
+
+    def _connection_ready(
+        self,
+        config: ComsolConfig,
+        report: dict[str, Any],
+    ) -> None:
+        self.connection_report = report
+        self._ignore_connection_changes = True
+        try:
+            if report.get("selected_study"):
+                self.study_var.set(str(report["selected_study"]))
+            studies = report.get("model", {}).get("studies", [])
+            self.study_entry.configure(
+                values=[study.get("tag", "") for study in studies]
+            )
+        finally:
+            self._ignore_connection_changes = False
+        model = report["model"]
+        self.model_summary_var.set(
+            f"{model['filename']}  ·  {report.get('installed_version', 'COMSOL')}"
+        )
+        self.connection_status_var.set("Connected")
+        self.status_label.configure(
+            background=COLORS["teal_soft"], foreground=COLORS["teal"]
+        )
+        self.activity_var.set(
+            f"{model['filename']} is ready. Review inputs and define optional outputs."
+        )
+        self._populate_parameters(model.get("parameters", {}))
+        self._populate_output_symbols(report.get("output_symbols", []))
+        self._set_run_actions(True)
+        if config.job_tag:
+            self.freshness_var.set(
+                "Physical output formulas use tables reevaluated by the selected job sequence."
+            )
+
+    def _show_empty_parameters(self) -> None:
+        for child in self.parameters_frame.inner.winfo_children():
+            child.destroy()
+        ttk.Label(
+            self.parameters_frame.inner,
+            text="Connect a model to load its global parameters.",
+            style="CardText.TLabel",
+        ).grid(row=0, column=0, sticky="w", padx=5, pady=12)
+
+    def _populate_parameters(self, parameters: dict[str, str]) -> None:
+        for child in self.parameters_frame.inner.winfo_children():
+            child.destroy()
+        self.parameter_variables.clear()
+        self.parameters_frame.inner.grid_columnconfigure(1, weight=1)
+        if not parameters:
+            self._show_empty_parameters()
+            return
+        for row, (name, value) in enumerate(parameters.items()):
+            variable = tk.StringVar(value=value)
+            self.parameter_variables[name] = variable
+            ttk.Label(
+                self.parameters_frame.inner,
+                text=name,
+                style="Field.TLabel",
+            ).grid(row=row, column=0, sticky="w", padx=(5, 12), pady=5)
+            ttk.Entry(
+                self.parameters_frame.inner,
+                textvariable=variable,
+            ).grid(row=row, column=1, sticky="ew", padx=(0, 6), pady=5)
+
+    def add_formula_row(self) -> None:
+        row_frame = ttk.Frame(self.formulas_frame.inner, style="Card.TFrame")
+        row_frame.pack(fill="x", padx=(2, 4), pady=4)
+        name_var = tk.StringVar()
+        expression_var = tk.StringVar()
+        name_entry = ttk.Entry(row_frame, textvariable=name_var, width=21)
+        name_entry.pack(side="left", padx=(0, 7))
+        expression_entry = ttk.Entry(row_frame, textvariable=expression_var)
+        expression_entry.pack(side="left", fill="x", expand=True, padx=(0, 7))
+        expression_entry.bind(
+            "<FocusIn>",
+            lambda _event, entry=expression_entry: self._set_active_formula_entry(entry),
+        )
+        remove = ttk.Button(
+            row_frame,
+            text="Remove",
+            style="Secondary.TButton",
+            command=lambda: self._remove_formula_row(row_frame),
+        )
+        remove.pack(side="right")
+        if not self.formula_rows:
+            name_var.set("solve_time_ratio")
+            expression_var.set(
+                "comsol_duration_seconds / comsol_reported_total_seconds"
+            )
+        self.formula_rows.append((row_frame, name_var, expression_var))
+
+    def _remove_formula_row(self, frame: ttk.Frame) -> None:
+        for row in list(self.formula_rows):
+            if row[0] is frame:
+                self.formula_rows.remove(row)
+                frame.destroy()
+                break
+
+    def _set_active_formula_entry(self, entry: ttk.Entry) -> None:
+        self.active_formula_entry = entry
+
+    def _populate_builtin_symbols(self) -> None:
+        self.symbols_tree.delete(*self.symbols_tree.get_children())
+        for key, description in BUILTIN_OUTPUT_SYMBOLS:
+            self.symbols_tree.insert("", "end", values=(key, description, "after run"))
+
+    def _populate_output_symbols(self, symbols: list[dict[str, Any]]) -> None:
+        self._populate_builtin_symbols()
+        for symbol in symbols:
+            self.symbols_tree.insert(
+                "",
+                "end",
+                values=(
+                    symbol["key"],
+                    symbol.get("table_label") or symbol.get("table_tag") or "COMSOL table",
+                    self._format_number(symbol.get("saved_value")),
+                ),
+            )
+
+    def _insert_selected_symbol(self, _event: tk.Event) -> None:
+        selection = self.symbols_tree.selection()
+        if not selection:
+            return
+        if self.active_formula_entry is None:
+            messagebox.showinfo(
+                "Formula editor",
+                "Click inside a formula expression, then double-click a symbol.",
+                parent=self.root,
+            )
+            return
+        symbol = str(self.symbols_tree.item(selection[0], "values")[0])
+        self.active_formula_entry.insert(tk.INSERT, symbol)
+        self.active_formula_entry.focus_set()
+
+    def _collect_parameters(self) -> dict[str, str]:
+        parameters: dict[str, str] = {}
+        for name, variable in self.parameter_variables.items():
+            value = variable.get().strip()
+            if not value:
+                raise ValueError(f"Parameter '{name}' cannot be empty")
+            parameters[name] = value
+        return parameters
+
+    def _collect_formulas(self) -> dict[str, str]:
+        formulas: dict[str, str] = {}
+        for _frame, name_var, expression_var in self.formula_rows:
+            name = name_var.get().strip()
+            expression = expression_var.get().strip()
+            if not name and not expression:
+                continue
+            if not name or not expression:
+                raise ValueError("Every computed output needs a name and expression")
+            if name in formulas:
+                raise ValueError(f"Computed output '{name}' is duplicated")
+            formulas[name] = expression
+        return validate_output_formulas(formulas)
+
+    def submit_run(self, *, start: bool) -> None:
+        try:
+            config = self._require_connected_config()
+            parameters = self._collect_parameters()
+            formulas = self._collect_formulas()
+            batch_name = self.batch_var.get().strip()
+            if not batch_name:
+                raise ValueError("Run label cannot be empty")
+            job_id = self.store.enqueue_batch(
+                batch_name,
+                "comsol",
+                [parameters],
+                output_formulas=formulas,
+            )[0]
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Run setup", str(exc), parent=self.root)
+            return
+
+        self.refresh_jobs()
+        if not start:
+            self.activity_var.set(f"Job #{job_id} was added to the local queue.")
+            return
+        self.activity_var.set(f"COMSOL is processing Job #{job_id}...")
+        runner = self._runner(config)
+        self._run_background(
+            "run",
+            lambda: runner.run_job(job_id),
+            lambda _summary: self._run_finished(job_id),
+        )
+
+    def run_next(self) -> None:
+        try:
+            config = self._require_connected_config()
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Run queue", str(exc), parent=self.root)
+            return
+        self.activity_var.set("Processing the next queued job...")
+        self._run_background(
+            "run",
+            lambda: self._runner(config).run_pending(limit=1),
+            self._next_finished,
+        )
+
+    def _require_connected_config(self) -> ComsolConfig:
+        if self.connection_report is None:
+            raise ValueError("Check the COMSOL connection before running a job")
+        return self._build_config()
+
+    def _runner(self, config: ComsolConfig) -> SimulationRunner:
+        return SimulationRunner(
+            store=self.store,
+            artifact_root=self.artifact_root,
+            adapters=[MockElectromagneticAdapter(), ComsolAdapter(config)],
+            notifier=notifier_from_environment(),
+        )
+
+    def _run_finished(self, job_id: int) -> None:
+        job = self.store.get(job_id)
+        self.refresh_jobs()
+        self.refresh_comparison()
+        errors = (job.result or {}).get("metadata", {}).get("formula_errors", {})
+        if job.status == JobStatus.SUCCEEDED and errors:
+            self.activity_var.set(
+                f"Job #{job_id} succeeded; {len(errors)} computed output(s) need attention."
+            )
+        else:
+            self.activity_var.set(f"Job #{job_id} finished with status: {job.status.value}.")
+        self._show_job(job)
+
+    def _next_finished(self, summary: Any) -> None:
+        self.refresh_jobs()
+        self.refresh_comparison()
+        if summary.processed:
+            self.activity_var.set(
+                f"Queue worker finished: {summary.succeeded} succeeded, "
+                f"{summary.failed} failed."
+            )
+        else:
+            self.activity_var.set("The run queue is empty.")
+
+    def refresh_jobs(self) -> None:
+        if not hasattr(self, "jobs_tree"):
+            return
+        self.jobs_tree.delete(*self.jobs_tree.get_children())
+        for job in self.store.list(limit=100):
+            self.jobs_tree.insert(
+                "",
+                "end",
+                iid=str(job.id),
+                values=(
+                    f"#{job.id}",
+                    job.batch_name,
+                    job.status.value,
+                    job.adapter,
+                    job.attempts,
+                    job.created_at.replace("T", " "),
+                ),
+            )
+        self.refresh_comparison()
+
+    def _open_selected_job(self, _event: tk.Event) -> None:
+        selection = self.jobs_tree.selection()
+        if selection:
+            self._show_job(self.store.get(int(selection[0])))
+
+    def _show_job(self, job: Job) -> None:
+        window = tk.Toplevel(self.root)
+        window.title(f"Job #{job.id} details")
+        window.geometry("760x620")
+        window.configure(background=COLORS["canvas"])
+        container = ttk.Frame(window, style="Card.TFrame", padding=22)
+        container.pack(fill="both", expand=True, padx=18, pady=18)
+        ttk.Label(
+            container,
+            text=f"Job #{job.id} · {job.batch_name}",
+            style="CardTitle.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            container,
+            text=f"{job.status.value} · {job.adapter} · {job.attempts} attempt(s)",
+            style="CardText.TLabel",
+        ).pack(anchor="w", pady=(4, 14))
+
+        notebook = ttk.Notebook(container)
+        notebook.pack(fill="both", expand=True)
+        for title, values in (
+            ("Inputs", job.parameters),
+            ("Formulas", job.output_formulas),
+            ("Metrics", (job.result or {}).get("metrics", {})),
+            (
+                "Formula errors",
+                (job.result or {}).get("metadata", {}).get("formula_errors", {}),
+            ),
+        ):
+            frame = ttk.Frame(notebook, style="Card.TFrame", padding=12)
+            notebook.add(frame, text=title)
+            tree = ttk.Treeview(frame, columns=("name", "value"), show="headings")
+            tree.heading("name", text="NAME")
+            tree.heading("value", text="VALUE")
+            tree.column("name", width=250)
+            tree.column("value", width=400, stretch=True)
+            tree.pack(fill="both", expand=True)
+            for name, value in values.items():
+                tree.insert("", "end", values=(name, self._format_number(value)))
+
+        footer = ttk.Frame(container, style="Card.TFrame")
+        footer.pack(fill="x", pady=(12, 0))
+        if job.artifact_dir:
+            ttk.Button(
+                footer,
+                text="Open artifacts",
+                style="Secondary.TButton",
+                command=lambda path=job.artifact_dir: self._open_artifacts(path),
+            ).pack(side="left")
+        if job.status == JobStatus.FAILED:
+            ttk.Button(
+                footer,
+                text="Retry",
+                style="Secondary.TButton",
+                command=lambda: self._retry_job(job.id, window),
+            ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            footer,
+            text="Close",
+            style="Primary.TButton",
+            command=window.destroy,
+        ).pack(side="right")
+
+    def _open_artifacts(self, path: str) -> None:
+        resolved = Path(path).resolve()
+        if not resolved.exists():
+            messagebox.showerror(
+                "Artifacts",
+                f"Artifact directory was not found: {resolved}",
+                parent=self.root,
+            )
+            return
+        os.startfile(resolved)  # type: ignore[attr-defined]
+
+    def _retry_job(self, job_id: int, window: tk.Toplevel) -> None:
+        try:
+            self.store.retry(job_id)
+        except ValueError as exc:
+            messagebox.showerror("Retry", str(exc), parent=window)
+            return
+        window.destroy()
+        self.refresh_jobs()
+        self.activity_var.set(f"Job #{job_id} was returned to the queue.")
+
+    def refresh_comparison(self) -> None:
+        if not hasattr(self, "compare_metric"):
+            return
+        metric_names: set[str] = set()
+        for job in self.store.list(status=JobStatus.SUCCEEDED, limit=200):
+            metrics = (job.result or {}).get("metrics", {})
+            metric_names.update(str(name) for name in metrics)
+        values = sorted(metric_names)
+        self.compare_metric.configure(values=values)
+        if self.compare_metric_var.get() not in values:
+            formula_names = {
+                name
+                for job in self.store.list(status=JobStatus.SUCCEEDED, limit=200)
+                for name in job.output_formulas
+                if name in values
+            }
+            selected = sorted(formula_names)[0] if formula_names else (values[0] if values else "")
+            self.compare_metric_var.set(selected)
+        self._refresh_comparison_rows()
+
+    def _refresh_comparison_rows(self, _event: tk.Event | None = None) -> None:
+        if not hasattr(self, "compare_tree"):
+            return
+        self.compare_tree.delete(*self.compare_tree.get_children())
+        metric = self.compare_metric_var.get()
+        if not metric:
+            return
+        for job in self.store.list(status=JobStatus.SUCCEEDED, limit=200):
+            metrics = (job.result or {}).get("metrics", {})
+            if metric not in metrics:
+                continue
+            parameters = ", ".join(
+                f"{name}={value}" for name, value in list(job.parameters.items())[:8]
+            )
+            self.compare_tree.insert(
+                "",
+                "end",
+                values=(
+                    f"#{job.id}",
+                    job.batch_name,
+                    parameters,
+                    self._format_number(metrics[metric]),
+                    (job.finished_at or "").replace("T", " "),
+                ),
+            )
+
+    def _set_run_actions(self, enabled: bool) -> None:
+        state = "normal" if enabled and not self.busy else "disabled"
+        self.run_now_button.configure(state=state)
+        self.queue_button.configure(state=state)
+        self.run_next_button.configure(state=state)
+
+    def _run_background(
+        self,
+        operation: str,
+        task: Callable[[], Any],
+        on_success: Callable[[Any], None],
+    ) -> None:
+        if self.busy:
+            return
+        self.busy = True
+        self.check_button.configure(state="disabled")
+        self._set_run_actions(False)
+
+        def worker() -> None:
+            try:
+                result = task()
+            except Exception as exc:
+                self.root.after(
+                    0,
+                    lambda error=exc: self._background_failed(operation, error),
+                )
+                return
+            self.root.after(0, lambda: self._background_succeeded(result, on_success))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _background_succeeded(
+        self,
+        result: Any,
+        callback: Callable[[Any], None],
+    ) -> None:
+        self.busy = False
+        self.check_button.configure(state="normal")
+        self._set_run_actions(self.connection_report is not None)
+        callback(result)
+
+    def _background_failed(self, operation: str, error: Exception) -> None:
+        self.busy = False
+        self.check_button.configure(state="normal")
+        self._set_run_actions(self.connection_report is not None)
+        self.connection_status_var.set("Check failed" if operation == "check" else "Connected")
+        self.activity_var.set(f"{operation.title()} failed: {error}")
+        messagebox.showerror(operation.title(), str(error), parent=self.root)
+
+    @staticmethod
+    def _format_number(value: Any) -> str:
+        if isinstance(value, float):
+            return f"{value:.9g}"
+        return str(value)
+
+
+def run_desktop(database_path: str | Path, artifact_root: str | Path) -> None:
+    root = tk.Tk()
+    DesktopApp(root, database_path, artifact_root)
+    root.mainloop()

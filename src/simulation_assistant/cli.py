@@ -57,6 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8080)
 
     subparsers.add_parser(
+        "desktop",
+        help="Start the native desktop assistant (no web server required)",
+    )
+
+    subparsers.add_parser(
         "telegram-id",
         help="Discover chat IDs from recent Telegram messages",
     )
@@ -114,6 +119,10 @@ def main(argv: Sequence[str] | None = None) -> None:
             print(f"Job {args.job_id} was returned to the queue.")
         elif args.command == "serve":
             serve_dashboard(args.database, args.artifacts, args.host, args.port)
+        elif args.command == "desktop":
+            from simulation_assistant.desktop import run_desktop
+
+            run_desktop(args.database, args.artifacts)
         elif args.command == "telegram-id":
             token = _required_environment("TELEGRAM_BOT_TOKEN")
             chats = discover_chat_ids(TelegramBotApi(token))

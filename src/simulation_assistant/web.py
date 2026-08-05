@@ -130,6 +130,7 @@ def create_dashboard_server(
             config = _config_from_payload(payload)
             batch_name = payload.get("batch_name", "")
             parameters = payload.get("parameters")
+            output_formulas = payload.get("output_formulas", {})
             start = payload.get("start", False)
             if not isinstance(batch_name, str) or not batch_name.strip():
                 raise ValueError("Batch name must be a non-empty string")
@@ -143,7 +144,10 @@ def create_dashboard_server(
                 raise ValueError("Start must be true or false")
 
             job_id = current_store.enqueue_batch(
-                batch_name.strip(), "comsol", [parameters]
+                batch_name.strip(),
+                "comsol",
+                [parameters],
+                output_formulas=output_formulas,
             )[0]
             if start:
                 summary = _runner(

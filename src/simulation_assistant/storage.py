@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
+from simulation_assistant.formulas import validate_output_formulas
 from simulation_assistant.types import Job, JobStatus
 
 
@@ -34,6 +35,7 @@ class JobStore:
                         status IN ('queued', 'running', 'succeeded', 'failed')
                     ),
                     parameters TEXT NOT NULL,
+                    output_formulas TEXT NOT NULL DEFAULT '{}',
                     result TEXT,
                     error TEXT,
                     artifact_dir TEXT,
@@ -45,20 +47,32 @@ class JobStore:
                 CREATE INDEX IF NOT EXISTS idx_jobs_status_id ON jobs(status, id);
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+            }
+            if "output_formulas" not in columns:
+                connection.execute(
+                    "ALTER TABLE jobs ADD COLUMN output_formulas TEXT NOT NULL "
+                    "DEFAULT '{}'"
+                )
 
     def enqueue_batch(
         self,
         batch_name: str,
         adapter: str,
         parameter_sets: Iterable[dict[str, Any]],
+        output_formulas: dict[str, str] | None = None,
     ) -> list[int]:
         created_at = utc_now()
+        formulas = validate_output_formulas(output_formulas)
         rows = [
             (
                 batch_name,
                 adapter,
                 JobStatus.QUEUED.value,
                 json.dumps(parameters, sort_keys=True),
+                json.dumps(formulas, sort_keys=True),
                 created_at,
             )
             for parameters in parameter_sets
@@ -72,8 +86,11 @@ class JobStore:
             for row in rows:
                 cursor.execute(
                     """
-                    INSERT INTO jobs(batch_name, adapter, status, parameters, created_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO jobs(
+                        batch_name, adapter, status, parameters,
+                        output_formulas, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     row,
                 )
@@ -241,6 +258,7 @@ class JobStore:
             adapter=str(row["adapter"]),
             status=JobStatus(row["status"]),
             parameters=json.loads(row["parameters"]),
+            output_formulas=json.loads(row["output_formulas"] or "{}"),
             result=json.loads(row["result"]) if row["result"] else None,
             error=row["error"],
             artifact_dir=row["artifact_dir"],

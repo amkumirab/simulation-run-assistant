@@ -121,6 +121,11 @@ class DashboardTests(unittest.TestCase):
                 "connection": self.connection(),
                 "batch_name": "dashboard-test",
                 "parameters": {"frequency": "90[kHz]"},
+                "output_formulas": {
+                    "duration_ratio": (
+                        "comsol_duration_seconds / comsol_reported_total_seconds"
+                    )
+                },
                 "start": False,
             },
             token=self.token,
@@ -129,6 +134,14 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(job["status"], "queued")
         self.assertEqual(job["adapter"], "comsol")
+        self.assertEqual(
+            job["output_formulas"],
+            {
+                "duration_ratio": (
+                    "comsol_duration_seconds / comsol_reported_total_seconds"
+                )
+            },
+        )
 
     def test_discovery_never_returns_the_full_model_path(self) -> None:
         private_path = str(self.root / "private" / "sensitive-model.mph")

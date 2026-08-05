@@ -31,6 +31,7 @@ class Job:
     adapter: str
     status: JobStatus
     parameters: dict[str, Any]
+    output_formulas: dict[str, str]
     result: dict[str, Any] | None
     error: str | None
     artifact_dir: str | None

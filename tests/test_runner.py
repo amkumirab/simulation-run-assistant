@@ -77,6 +77,36 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.store.get(first_id).status, JobStatus.QUEUED)
         self.assertEqual(self.store.get(selected_id).status, JobStatus.SUCCEEDED)
 
+    def test_computed_outputs_are_saved_with_the_result(self) -> None:
+        job_id = self.store.enqueue_batch(
+            "formula-demo",
+            "mock-em",
+            [{"frequency_ghz": 10, "width_mm": 20}],
+            output_formulas={"transmission_percent": "10 ** (s21_db / 10) * 100"},
+        )[0]
+
+        summary = SimulationRunner(self.store, self.root / "artifacts").run_job(job_id)
+
+        job = self.store.get(job_id)
+        self.assertEqual(summary.succeeded, 1)
+        self.assertIn("transmission_percent", job.result["metrics"])
+        self.assertEqual(job.result["metadata"]["formula_errors"], {})
+
+    def test_formula_error_does_not_discard_a_successful_simulation(self) -> None:
+        job_id = self.store.enqueue_batch(
+            "formula-error",
+            "mock-em",
+            [{"frequency_ghz": 10}],
+            output_formulas={"coupling": "mutual_inductance / primary_inductance"},
+        )[0]
+
+        summary = SimulationRunner(self.store, self.root / "artifacts").run_job(job_id)
+
+        job = self.store.get(job_id)
+        self.assertEqual(summary.succeeded, 1)
+        self.assertEqual(job.status, JobStatus.SUCCEEDED)
+        self.assertIn("not available", job.result["metadata"]["formula_errors"]["coupling"])
+
 
 if __name__ == "__main__":
     unittest.main()

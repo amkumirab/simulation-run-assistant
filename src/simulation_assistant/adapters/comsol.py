@@ -308,6 +308,10 @@ def check_comsol(
     if licenses.returncode != 0:
         raise RuntimeError("COMSOL license check failed")
     selected_study = _select_study(config.study_tag, config.job_tag, info)
+    try:
+        output_symbols = catalog_mph_output_symbols(config.model_path)
+    except ValueError:
+        output_symbols = []
     return {
         "status": "ok",
         "executable": str(config.executable.resolve()),
@@ -318,6 +322,12 @@ def check_comsol(
         "license_requirements": [
             line.strip() for line in licenses.stdout.splitlines() if line.strip()
         ],
+        "output_symbols": output_symbols,
+        "output_symbols_note": (
+            "These symbols come from saved single-row COMSOL tables. They become "
+            "fresh run metrics only when a configured job sequence reevaluates "
+            "Derived Values."
+        ),
         "timeout_seconds": config.timeout_seconds,
         "cores": config.cores,
     }
@@ -356,6 +366,27 @@ def extract_mph_tables(model_path: str | Path, max_rows: int = 1000) -> list[dic
             }
         )
     return tables
+
+
+def catalog_mph_output_symbols(model_path: str | Path) -> list[dict[str, Any]]:
+    """Describe formula symbols represented by saved single-row MPH tables."""
+    symbols: list[dict[str, Any]] = []
+    for table in extract_mph_tables(model_path):
+        if len(table["rows"]) != 1:
+            continue
+        for index, (column, value) in enumerate(
+            zip(table["columns"], table["rows"][0]), 1
+        ):
+            symbols.append(
+                {
+                    "key": _metric_key(f"{table['tag']}_{index}_{column}"),
+                    "column": column,
+                    "table_tag": table["tag"],
+                    "table_label": table["label"],
+                    "saved_value": float(value),
+                }
+            )
+    return symbols
 
 
 def _build_batch_command(

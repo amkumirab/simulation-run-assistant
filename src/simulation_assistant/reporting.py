@@ -20,6 +20,7 @@ def write_artifacts(
         "batch_name": job.batch_name,
         "adapter": job.adapter,
         "parameters": job.parameters,
+        "output_formulas": job.output_formulas,
         "result": result.to_dict(),
     }
     (output_dir / "result.json").write_text(

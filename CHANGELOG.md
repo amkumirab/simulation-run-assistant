@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - 2026-08-05
+
+### Added
+
+- Native Tkinter desktop assistant started with `sim-assistant desktop`
+- COMSOL model browsing, connection checks, parameter editing, queue actions,
+  run details, artifact access, and cross-run comparison without a web server
+- Safe computed-output formulas with arithmetic, engineering functions,
+  formula dependencies, validation limits, and per-formula error reporting
+- COMSOL saved-table output-symbol catalog for formula authoring
+- Backward-compatible SQLite migration for stored output formulas
+- Formula, migration, runner integration, and output-symbol tests
+
+### Changed
+
+- Result artifacts now record the formulas associated with each simulation
+- Package version increased to 0.4.0
+
 ## [0.3.0] - 2026-08-04
 
 ### Added
