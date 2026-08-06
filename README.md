@@ -31,7 +31,10 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Guided local web assistant for COMSOL connection checks, run setup, queueing,
   targeted execution, monitoring, details, and retries
 - Native desktop assistant with no browser or local web server requirement
+- Native parameter-sweep builder with Cartesian preview, sequential execution,
+  and runtime estimates based on recent COMSOL runs
 - Safe custom output formulas and comparison across successful simulation states
+- Batch-filtered comparison charts, highest-value highlighting, and CSV export
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -105,8 +108,22 @@ sim-assistant desktop
 
 The desktop workspace provides native file pickers, COMSOL validation, editable
 model inputs, computed-output formulas, Run now and Queue only actions, run
-details, local artifact access, and a comparison table for repeated simulation
+details, local artifact access, and visual comparison for repeated simulation
 states. It does not start an HTTP server or require a browser.
+
+For a parameter sweep, change one or more input rows from **Fixed** to **Sweep**.
+Enter either an explicit comma-separated list or an inclusive numeric range:
+
+```text
+70[kHz], 80[kHz], 90[kHz]
+70:100:10[kHz]
+```
+
+The workspace previews the Cartesian job count and estimates the sequential
+runtime from recent successful COMSOL runs. Sweep jobs run one at a time to
+respect the default local license-seat workflow. The **Compare runs** tab can
+filter one batch, plot a numeric input against an output metric, identify the
+highest result, and export the visible rows as CSV.
 
 Computed outputs are safe arithmetic expressions over normalized numeric result
 metrics. For example:
@@ -242,7 +259,7 @@ future commits:
 - Attach result plots to Telegram messages
 - Parallel workers with configurable license-seat limits
 - Stop/cancel controls and stale-running-job recovery
-- Batch comparison reports and convergence diagnostics
+- Multi-objective ranking and convergence diagnostics
 - Authentication before any non-local deployment
 - Container image and scheduled worker mode
 
@@ -261,6 +278,7 @@ src/simulation_assistant/
 |-- reporting.py    # JSON and SVG artifacts
 |-- runner.py       # Failure-isolated worker loop
 |-- storage.py      # SQLite queue and state transitions
+|-- sweeps.py       # Native sweep parsing, estimates, and CSV comparison export
 `-- web.py          # Dependency-free dashboard and JSON API
 ```
 

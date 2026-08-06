@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -20,6 +21,14 @@ from simulation_assistant.formulas import (
 from simulation_assistant.notifications import notifier_from_environment
 from simulation_assistant.runner import SimulationRunner
 from simulation_assistant.storage import JobStore
+from simulation_assistant.sweeps import (
+    build_parameter_sets,
+    comparison_rows,
+    estimate_sequential_seconds,
+    numeric_parameter_value,
+    parse_sweep_values,
+    write_comparison_csv,
+)
 from simulation_assistant.types import Job, JobStatus
 
 
@@ -78,6 +87,40 @@ class ScrollableFrame(ttk.Frame):
         self.canvas.itemconfigure(self.window, width=event.width)
 
 
+class ScrollablePage(ttk.Frame):
+    def __init__(self, parent: tk.Misc) -> None:
+        super().__init__(parent, style="App.TFrame")
+        self.canvas = tk.Canvas(
+            self,
+            background=COLORS["canvas"],
+            highlightthickness=0,
+        )
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = ttk.Frame(
+            self.canvas,
+            style="App.TFrame",
+            padding=(0, 12, 8, 0),
+        )
+        self.window = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.inner.bind("<Configure>", self._update_scroll_region)
+        self.canvas.bind("<Configure>", self._resize_inner)
+        self.canvas.bind("<MouseWheel>", self._scroll)
+
+    def _update_scroll_region(self, _event: tk.Event) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _resize_inner(self, event: tk.Event) -> None:
+        self.canvas.itemconfigure(self.window, width=event.width)
+
+    def _scroll(self, event: tk.Event) -> None:
+        self.canvas.yview_scroll(int(-event.delta / 120), "units")
+
+
 class DesktopApp:
     def __init__(
         self,
@@ -91,8 +134,10 @@ class DesktopApp:
         self.artifact_root = Path(artifact_root)
         self.connection_report: dict[str, Any] | None = None
         self.parameter_variables: dict[str, tk.StringVar] = {}
+        self.parameter_modes: dict[str, tk.StringVar] = {}
         self.formula_rows: list[tuple[ttk.Frame, tk.StringVar, tk.StringVar]] = []
         self.active_formula_entry: ttk.Entry | None = None
+        self.current_comparison_rows: list[dict[str, Any]] = []
         self.busy = False
         self._ignore_connection_changes = False
 
@@ -210,6 +255,10 @@ class DesktopApp:
             "with Evaluate Derived Values for fresh physical output symbols."
         )
         self.compare_metric_var = tk.StringVar()
+        self.compare_batch_var = tk.StringVar(value="All batches")
+        self.compare_x_var = tk.StringVar()
+        self.compare_best_var = tk.StringVar(value="Choose an output metric to compare runs.")
+        self.sweep_summary_var = tk.StringVar(value="1 simulation state")
 
         for variable in (
             self.executable_var,
@@ -258,13 +307,13 @@ class DesktopApp:
 
         self.notebook = ttk.Notebook(content)
         self.notebook.grid(row=1, column=0, sticky="nsew")
-        workspace = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 12, 0, 0))
+        workspace = ScrollablePage(self.notebook)
         runs = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 12, 0, 0))
         compare = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 12, 0, 0))
         self.notebook.add(workspace, text="Workspace")
         self.notebook.add(runs, text="Runs")
         self.notebook.add(compare, text="Compare runs")
-        self._build_workspace(workspace)
+        self._build_workspace(workspace.inner)
         self._build_runs_tab(runs)
         self._build_compare(compare)
 
@@ -441,7 +490,7 @@ class DesktopApp:
         )
         ttk.Label(
             card,
-            text="Global parameters detected in the MPH model.",
+            text="Set each input to Fixed or Sweep. Sweep accepts a list or start:stop:step.",
             style="CardText.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(3, 12))
         self.parameters_frame = ScrollableFrame(card, height=210)
@@ -513,6 +562,11 @@ class DesktopApp:
         ttk.Label(title, textvariable=self.freshness_var, style="CardText.TLabel").grid(
             row=0, column=1, sticky="w"
         )
+        ttk.Label(
+            title,
+            textvariable=self.sweep_summary_var,
+            style="Field.TLabel",
+        ).grid(row=0, column=2, sticky="e", padx=(12, 0))
         actions = ttk.Frame(card, style="Card.TFrame")
         actions.grid(row=1, column=0, sticky="ew", pady=(12, 0))
         ttk.Label(actions, text="Run label", style="Field.TLabel").pack(side="left")
@@ -605,38 +659,88 @@ class DesktopApp:
         parent.grid_rowconfigure(1, weight=1)
         header = ttk.Frame(parent, style="Card.TFrame", padding=18)
         header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
-        header.grid_columnconfigure(1, weight=1)
+        header.grid_columnconfigure(0, weight=1)
         ttk.Label(header, text="Compare computed outputs", style="CardTitle.TLabel").grid(
             row=0, column=0, sticky="w"
         )
-        ttk.Label(header, text="Output metric", style="Field.TLabel").grid(
-            row=0, column=1, sticky="e", padx=(10, 7)
+        controls = ttk.Frame(header, style="Card.TFrame")
+        controls.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        controls.grid_columnconfigure(1, weight=1)
+        controls.grid_columnconfigure(3, weight=1)
+        ttk.Label(controls, text="Batch", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 7)
+        )
+        self.compare_batch = ttk.Combobox(
+            controls,
+            textvariable=self.compare_batch_var,
+            state="readonly",
+            width=18,
+        )
+        self.compare_batch.grid(row=0, column=1, sticky="ew")
+        self.compare_batch.bind("<<ComboboxSelected>>", self._comparison_filter_changed)
+        ttk.Label(controls, text="X input", style="Field.TLabel").grid(
+            row=0, column=2, sticky="e", padx=(14, 7)
+        )
+        self.compare_x = ttk.Combobox(
+            controls,
+            textvariable=self.compare_x_var,
+            state="readonly",
+            width=13,
+        )
+        self.compare_x.grid(row=0, column=3, sticky="ew")
+        self.compare_x.bind("<<ComboboxSelected>>", self._refresh_comparison_rows)
+        ttk.Label(controls, text="Output", style="Field.TLabel").grid(
+            row=1, column=0, sticky="w", padx=(0, 7), pady=(10, 0)
         )
         self.compare_metric = ttk.Combobox(
-            header,
+            controls,
             textvariable=self.compare_metric_var,
             state="readonly",
-            width=34,
+            width=28,
         )
-        self.compare_metric.grid(row=0, column=2, sticky="e")
+        self.compare_metric.grid(
+            row=1,
+            column=1,
+            columnspan=2,
+            sticky="ew",
+            pady=(10, 0),
+        )
         self.compare_metric.bind("<<ComboboxSelected>>", self._refresh_comparison_rows)
         ttk.Button(
-            header,
-            text="Refresh",
+            controls,
+            text="Export CSV",
             style="Secondary.TButton",
-            command=self.refresh_comparison,
-        ).grid(row=0, column=3, padx=(8, 0))
+            command=self._export_comparison,
+        ).grid(row=1, column=3, sticky="e", padx=(10, 0), pady=(10, 0))
 
         card = ttk.Frame(parent, style="Card.TFrame", padding=18)
         card.grid(row=1, column=0, sticky="nsew")
         card.grid_columnconfigure(0, weight=1)
-        card.grid_rowconfigure(1, weight=1)
+        card.grid_rowconfigure(2, weight=1)
+        summary = ttk.Frame(card, style="Card.TFrame")
+        summary.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        summary.grid_columnconfigure(0, weight=1)
         ttk.Label(
-            card,
-            text="Each row is one successful simulation state. Change inputs, run again, "
-            "then compare the selected output here.",
+            summary,
+            textvariable=self.compare_best_var,
             style="CardText.TLabel",
-        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Button(
+            summary,
+            text="Refresh",
+            style="Secondary.TButton",
+            command=self.refresh_comparison,
+        ).grid(row=0, column=1, sticky="e")
+
+        self.compare_chart = tk.Canvas(
+            card,
+            height=220,
+            background=COLORS["soft"],
+            highlightthickness=1,
+            highlightbackground=COLORS["line"],
+        )
+        self.compare_chart.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        self.compare_chart.bind("<Configure>", lambda _event: self._draw_comparison_chart())
         self.compare_tree = ttk.Treeview(
             card,
             columns=("id", "batch", "parameters", "value", "finished"),
@@ -655,7 +759,7 @@ class DesktopApp:
                 width=width,
                 stretch=column in {"batch", "parameters"},
             )
-        self.compare_tree.grid(row=1, column=0, sticky="nsew")
+        self.compare_tree.grid(row=2, column=0, sticky="nsew")
 
     def _field_label(self, parent: ttk.Frame, text: str, row: int, column: int) -> None:
         ttk.Label(parent, text=text, style="Field.TLabel").grid(
@@ -817,27 +921,56 @@ class DesktopApp:
             text="Connect a model to load its global parameters.",
             style="CardText.TLabel",
         ).grid(row=0, column=0, sticky="w", padx=5, pady=12)
+        self.sweep_summary_var.set("1 simulation state")
 
     def _populate_parameters(self, parameters: dict[str, str]) -> None:
         for child in self.parameters_frame.inner.winfo_children():
             child.destroy()
         self.parameter_variables.clear()
-        self.parameters_frame.inner.grid_columnconfigure(1, weight=1)
+        self.parameter_modes.clear()
+        self.parameters_frame.inner.grid_columnconfigure(2, weight=1)
         if not parameters:
             self._show_empty_parameters()
             return
-        for row, (name, value) in enumerate(parameters.items()):
+        ttk.Label(
+            self.parameters_frame.inner,
+            text="PARAMETER",
+            style="CardText.TLabel",
+        ).grid(row=0, column=0, sticky="w", padx=(5, 12), pady=(0, 4))
+        ttk.Label(
+            self.parameters_frame.inner,
+            text="MODE",
+            style="CardText.TLabel",
+        ).grid(row=0, column=1, sticky="w", padx=(0, 8), pady=(0, 4))
+        ttk.Label(
+            self.parameters_frame.inner,
+            text="VALUE OR RANGE",
+            style="CardText.TLabel",
+        ).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=(0, 4))
+        for row, (name, value) in enumerate(parameters.items(), start=1):
             variable = tk.StringVar(value=value)
+            mode = tk.StringVar(value="Fixed")
             self.parameter_variables[name] = variable
+            self.parameter_modes[name] = mode
             ttk.Label(
                 self.parameters_frame.inner,
                 text=name,
                 style="Field.TLabel",
             ).grid(row=row, column=0, sticky="w", padx=(5, 12), pady=5)
+            ttk.Combobox(
+                self.parameters_frame.inner,
+                textvariable=mode,
+                values=("Fixed", "Sweep"),
+                state="readonly",
+                width=9,
+            ).grid(row=row, column=1, sticky="ew", padx=(0, 8), pady=5)
             ttk.Entry(
                 self.parameters_frame.inner,
                 textvariable=variable,
-            ).grid(row=row, column=1, sticky="ew", padx=(0, 6), pady=5)
+            ).grid(row=row, column=2, sticky="ew", padx=(0, 6), pady=5)
+            variable.trace_add("write", self._update_sweep_preview)
+            mode.trace_add("write", self._update_sweep_preview)
+        self._update_sweep_preview()
 
     def add_formula_row(self) -> None:
         row_frame = ttk.Frame(self.formulas_frame.inner, style="Card.TFrame")
@@ -909,14 +1042,38 @@ class DesktopApp:
         self.active_formula_entry.insert(tk.INSERT, symbol)
         self.active_formula_entry.focus_set()
 
-    def _collect_parameters(self) -> dict[str, str]:
-        parameters: dict[str, str] = {}
+    def _collect_parameter_sets(self) -> list[dict[str, str]]:
+        fixed: dict[str, str] = {}
+        sweep: dict[str, list[str]] = {}
         for name, variable in self.parameter_variables.items():
             value = variable.get().strip()
             if not value:
                 raise ValueError(f"Parameter '{name}' cannot be empty")
-            parameters[name] = value
-        return parameters
+            if self.parameter_modes[name].get() == "Sweep":
+                sweep[name] = parse_sweep_values(value)
+            else:
+                fixed[name] = value
+        return build_parameter_sets(fixed, sweep)
+
+    def _update_sweep_preview(self, *_args: object) -> None:
+        if not hasattr(self, "sweep_summary_var"):
+            return
+        try:
+            count = len(self._collect_parameter_sets())
+        except ValueError as exc:
+            self.sweep_summary_var.set(f"Sweep needs attention: {exc}")
+            return
+        estimate = estimate_sequential_seconds(
+            count,
+            self.store.list(status=JobStatus.SUCCEEDED, limit=20),
+        )
+        label = f"{count} simulation state{'s' if count != 1 else ''}"
+        if estimate is not None:
+            label += f"  ·  about {self._format_duration(estimate)} sequentially"
+        self.sweep_summary_var.set(label)
+        if hasattr(self, "run_now_button"):
+            self.run_now_button.configure(text="Run sweep" if count > 1 else "Run now")
+            self.queue_button.configure(text="Queue sweep" if count > 1 else "Queue only")
 
     def _collect_formulas(self) -> dict[str, str]:
         formulas: dict[str, str] = {}
@@ -935,32 +1092,76 @@ class DesktopApp:
     def submit_run(self, *, start: bool) -> None:
         try:
             config = self._require_connected_config()
-            parameters = self._collect_parameters()
+            parameter_sets = self._collect_parameter_sets()
             formulas = self._collect_formulas()
             batch_name = self.batch_var.get().strip()
             if not batch_name:
                 raise ValueError("Run label cannot be empty")
-            job_id = self.store.enqueue_batch(
+            if len(parameter_sets) >= 25:
+                action = "run" if start else "queue"
+                confirmed = messagebox.askyesno(
+                    "Confirm parameter sweep",
+                    f"This will {action} {len(parameter_sets)} COMSOL jobs sequentially. Continue?",
+                    parent=self.root,
+                )
+                if not confirmed:
+                    return
+            job_ids = self.store.enqueue_batch(
                 batch_name,
                 "comsol",
-                [parameters],
+                parameter_sets,
                 output_formulas=formulas,
-            )[0]
+            )
         except (OSError, ValueError) as exc:
             messagebox.showerror("Run setup", str(exc), parent=self.root)
             return
 
         self.refresh_jobs()
         if not start:
-            self.activity_var.set(f"Job #{job_id} was added to the local queue.")
+            if len(job_ids) == 1:
+                self.activity_var.set(f"Job #{job_ids[0]} was added to the local queue.")
+            else:
+                self.activity_var.set(
+                    f"{len(job_ids)} sweep jobs were added to the local queue."
+                )
             return
-        self.activity_var.set(f"COMSOL is processing Job #{job_id}...")
+        if len(job_ids) == 1:
+            self.activity_var.set(f"COMSOL is processing Job #{job_ids[0]}...")
+        else:
+            self.activity_var.set(
+                f"COMSOL is processing {len(job_ids)} sweep jobs sequentially..."
+            )
         runner = self._runner(config)
         self._run_background(
             "run",
-            lambda: runner.run_job(job_id),
-            lambda _summary: self._run_finished(job_id),
+            lambda: self._run_job_ids(runner, job_ids),
+            lambda summary: self._submitted_jobs_finished(job_ids, summary),
         )
+
+    @staticmethod
+    def _run_job_ids(runner: SimulationRunner, job_ids: list[int]) -> dict[str, int]:
+        succeeded = 0
+        failed = 0
+        for job_id in job_ids:
+            summary = runner.run_job(job_id)
+            succeeded += summary.succeeded
+            failed += summary.failed
+        return {"succeeded": succeeded, "failed": failed}
+
+    def _submitted_jobs_finished(
+        self,
+        job_ids: list[int],
+        summary: dict[str, int],
+    ) -> None:
+        if len(job_ids) == 1:
+            self._run_finished(job_ids[0])
+            return
+        self.refresh_jobs()
+        self.refresh_comparison()
+        self.activity_var.set(
+            f"Sweep finished: {summary['succeeded']} succeeded, {summary['failed']} failed."
+        )
+        self.notebook.select(2)
 
     def run_next(self) -> None:
         try:
@@ -1124,16 +1325,33 @@ class DesktopApp:
     def refresh_comparison(self) -> None:
         if not hasattr(self, "compare_metric"):
             return
+        successful_jobs = self.store.list(status=JobStatus.SUCCEEDED, limit=500)
+        batches = sorted({job.batch_name for job in successful_jobs})
+        self.compare_batch.configure(values=["All batches", *batches])
+        if self.compare_batch_var.get() not in {"All batches", *batches}:
+            self.compare_batch_var.set("All batches")
+        selected_batch = self._selected_comparison_batch()
+        filtered_jobs = [
+            job
+            for job in successful_jobs
+            if selected_batch is None or job.batch_name == selected_batch
+        ]
         metric_names: set[str] = set()
-        for job in self.store.list(status=JobStatus.SUCCEEDED, limit=200):
+        parameter_names: set[str] = set()
+        for job in filtered_jobs:
             metrics = (job.result or {}).get("metrics", {})
             metric_names.update(str(name) for name in metrics)
+            parameter_names.update(str(name) for name in job.parameters)
         values = sorted(metric_names)
         self.compare_metric.configure(values=values)
+        x_values = ["Job ID", *sorted(parameter_names)]
+        self.compare_x.configure(values=x_values)
+        if self.compare_x_var.get() not in x_values:
+            self.compare_x_var.set(x_values[1] if len(x_values) > 1 else "Job ID")
         if self.compare_metric_var.get() not in values:
             formula_names = {
                 name
-                for job in self.store.list(status=JobStatus.SUCCEEDED, limit=200)
+                for job in filtered_jobs
                 for name in job.output_formulas
                 if name in values
             }
@@ -1141,31 +1359,199 @@ class DesktopApp:
             self.compare_metric_var.set(selected)
         self._refresh_comparison_rows()
 
+    def _selected_comparison_batch(self) -> str | None:
+        selected = self.compare_batch_var.get()
+        return None if selected == "All batches" else selected
+
+    def _comparison_filter_changed(self, _event: tk.Event | None = None) -> None:
+        self.refresh_comparison()
+
     def _refresh_comparison_rows(self, _event: tk.Event | None = None) -> None:
         if not hasattr(self, "compare_tree"):
             return
         self.compare_tree.delete(*self.compare_tree.get_children())
         metric = self.compare_metric_var.get()
         if not metric:
+            self.current_comparison_rows = []
+            self.compare_best_var.set("Choose an output metric to compare runs.")
+            self._draw_comparison_chart()
             return
-        for job in self.store.list(status=JobStatus.SUCCEEDED, limit=200):
-            metrics = (job.result or {}).get("metrics", {})
-            if metric not in metrics:
-                continue
-            parameters = ", ".join(
-                f"{name}={value}" for name, value in list(job.parameters.items())[:8]
+        jobs = self.store.list(status=JobStatus.SUCCEEDED, limit=500)
+        rows = comparison_rows(
+            jobs,
+            metric,
+            batch_name=self._selected_comparison_batch(),
+        )
+        self.current_comparison_rows = rows
+        best_row = max(rows, key=lambda row: row["value"]) if rows else None
+        if best_row:
+            self.compare_best_var.set(
+                f"Best (highest) {metric}: {self._format_number(best_row['value'])} "
+                f"at Job #{best_row['job_id']} · {best_row['batch_name']}"
             )
-            self.compare_tree.insert(
+        else:
+            self.compare_best_var.set("No successful runs contain the selected output.")
+        for row in rows:
+            parameters = ", ".join(
+                f"{name}={value}"
+                for name, value in list(dict(row["parameters"]).items())[:8]
+            )
+            item = self.compare_tree.insert(
                 "",
                 "end",
                 values=(
-                    f"#{job.id}",
-                    job.batch_name,
+                    f"#{row['job_id']}",
+                    row["batch_name"],
                     parameters,
-                    self._format_number(metrics[metric]),
-                    (job.finished_at or "").replace("T", " "),
+                    self._format_number(row["value"]),
+                    str(row["finished_at"]).replace("T", " "),
                 ),
             )
+            if best_row and row["job_id"] == best_row["job_id"]:
+                self.compare_tree.item(item, tags=("best",))
+        self.compare_tree.tag_configure("best", background=COLORS["teal_soft"])
+        self._draw_comparison_chart()
+
+    def _draw_comparison_chart(self) -> None:
+        if not hasattr(self, "compare_chart"):
+            return
+        canvas = self.compare_chart
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 500)
+        height = max(canvas.winfo_height(), 220)
+        rows = self.current_comparison_rows
+        if not rows:
+            canvas.create_text(
+                width / 2,
+                height / 2,
+                text="Successful runs will appear here as a comparison chart.",
+                fill=COLORS["muted"],
+                font=("Segoe UI", 10),
+            )
+            return
+
+        x_name = self.compare_x_var.get()
+        points: list[tuple[float, float, int]] = []
+        for row in rows:
+            if x_name == "Job ID":
+                x_value = float(row["job_id"])
+            else:
+                x_value = numeric_parameter_value(dict(row["parameters"]).get(x_name))
+            if x_value is not None:
+                points.append((x_value, float(row["value"]), int(row["job_id"])))
+        if not points:
+            canvas.create_text(
+                width / 2,
+                height / 2,
+                text=f"'{x_name}' does not contain numeric values for this chart.",
+                fill=COLORS["muted"],
+                font=("Segoe UI", 10),
+            )
+            return
+        points.sort(key=lambda point: (point[0], point[2]))
+        left, right, top, bottom = 62, width - 24, 22, height - 42
+        x_values = [point[0] for point in points]
+        y_values = [point[1] for point in points]
+        x_min, x_max = min(x_values), max(x_values)
+        y_min, y_max = min(y_values), max(y_values)
+        if x_min == x_max:
+            x_min -= 0.5
+            x_max += 0.5
+        if y_min == y_max:
+            margin = max(abs(y_min) * 0.05, 0.5)
+            y_min -= margin
+            y_max += margin
+
+        def project_x(value: float) -> float:
+            return left + (value - x_min) / (x_max - x_min) * (right - left)
+
+        def project_y(value: float) -> float:
+            return bottom - (value - y_min) / (y_max - y_min) * (bottom - top)
+
+        canvas.create_line(left, top, left, bottom, fill="#aab8c0")
+        canvas.create_line(left, bottom, right, bottom, fill="#aab8c0")
+        projected = [(project_x(x), project_y(y), job_id) for x, y, job_id in points]
+        if len(projected) > 1 and len(set(x_values)) == len(x_values):
+            line_coordinates = [coordinate for point in projected for coordinate in point[:2]]
+            canvas.create_line(*line_coordinates, fill=COLORS["blue"], width=2)
+        best_job_id = max(rows, key=lambda row: row["value"])["job_id"]
+        for x, y, job_id in projected:
+            color = COLORS["teal"] if job_id == best_job_id else COLORS["blue"]
+            radius = 5 if job_id == best_job_id else 4
+            canvas.create_oval(
+                x - radius,
+                y - radius,
+                x + radius,
+                y + radius,
+                fill=color,
+                outline="white",
+                width=1,
+            )
+        canvas.create_text(
+            left,
+            bottom + 18,
+            text=self._format_number(x_min),
+            anchor="w",
+            fill=COLORS["muted"],
+            font=("Segoe UI", 8),
+        )
+        canvas.create_text(
+            right,
+            bottom + 18,
+            text=self._format_number(x_max),
+            anchor="e",
+            fill=COLORS["muted"],
+            font=("Segoe UI", 8),
+        )
+        canvas.create_text(
+            (left + right) / 2,
+            height - 10,
+            text=x_name,
+            fill=COLORS["muted"],
+            font=("Segoe UI Semibold", 8),
+        )
+        canvas.create_text(
+            left - 8,
+            top,
+            text=self._format_number(y_max),
+            anchor="e",
+            fill=COLORS["muted"],
+            font=("Segoe UI", 8),
+        )
+        canvas.create_text(
+            left - 8,
+            bottom,
+            text=self._format_number(y_min),
+            anchor="e",
+            fill=COLORS["muted"],
+            font=("Segoe UI", 8),
+        )
+
+    def _export_comparison(self) -> None:
+        if not self.current_comparison_rows:
+            messagebox.showinfo(
+                "Export comparison",
+                "There are no comparison rows to export.",
+                parent=self.root,
+            )
+            return
+        batch = self._selected_comparison_batch() or "all-batches"
+        metric = self.compare_metric_var.get() or "metric"
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "-", f"{batch}-{metric}").strip("-")
+        selected = filedialog.asksaveasfilename(
+            title="Export comparison CSV",
+            defaultextension=".csv",
+            initialfile=f"{safe_name or 'comparison'}.csv",
+            filetypes=[("CSV file", "*.csv"), ("All files", "*")],
+        )
+        if not selected:
+            return
+        try:
+            output = write_comparison_csv(selected, self.current_comparison_rows)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Export comparison", str(exc), parent=self.root)
+            return
+        self.activity_var.set(f"Comparison exported to {output.name}.")
 
     def _set_run_actions(self, enabled: bool) -> None:
         state = "normal" if enabled and not self.busy else "disabled"
@@ -1215,6 +1601,17 @@ class DesktopApp:
         self.connection_status_var.set("Check failed" if operation == "check" else "Connected")
         self.activity_var.set(f"{operation.title()} failed: {error}")
         messagebox.showerror(operation.title(), str(error), parent=self.root)
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        rounded = max(0, round(seconds))
+        hours, remainder = divmod(rounded, 3600)
+        minutes, remaining_seconds = divmod(remainder, 60)
+        if hours:
+            return f"{hours}h {minutes}m"
+        if minutes:
+            return f"{minutes}m {remaining_seconds}s"
+        return f"{remaining_seconds}s"
 
     @staticmethod
     def _format_number(value: Any) -> str:

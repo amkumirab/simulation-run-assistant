@@ -103,6 +103,18 @@ fields and catalogs numeric symbols from saved single-row COMSOL tables. Define
 optional computed outputs, run or queue the model, and use **Compare runs** to
 inspect one metric across different input states.
 
+To build a sweep directly in the desktop app, change a parameter mode from
+**Fixed** to **Sweep** and enter either comma-separated COMSOL values such as
+`70[kHz], 80[kHz], 90[kHz]` or an inclusive `start:stop:step` range such as
+`70:100:10[kHz]`. Multiple swept parameters create a Cartesian product. The app
+previews the number of states, estimates sequential runtime from recent COMSOL
+runs, asks for confirmation before large submissions, and enforces a 500-job
+desktop safety limit.
+
+Sweep execution is sequential. In **Compare runs**, select the batch, a numeric
+input for the X axis, and an output metric. The highest value is highlighted;
+the visible comparison can be exported as a UTF-8 CSV file.
+
 Supported formula operations are `+`, `-`, `*`, `/`, `%`, and `**`. Supported
 functions include `abs`, `sqrt`, `log`, `log10`, `exp`, `sin`, `cos`, `tan`,
 `min`, and `max`; constants `pi` and `e` are also available. Formulas are parsed

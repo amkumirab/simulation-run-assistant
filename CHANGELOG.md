@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-08-06
+
+### Added
+
+- Native Fixed/Sweep mode for COMSOL model parameters
+- Comma-separated and inclusive `start:stop:step` sweep input syntax with units
+- Cartesian job-count preview, 500-job safety limit, and sequential runtime estimates
+- Targeted sequential execution for every job created by a desktop sweep
+- Batch and X-axis filters, dependency-free comparison charts, highest-value
+  highlighting, and UTF-8 CSV export
+- Unit coverage for sweep parsing, expansion limits, runtime estimates,
+  numeric values with units, comparison filtering, and CSV output
+
+### Changed
+
+- Native comparison history now loads up to 500 successful jobs
+- Package version increased to 0.5.0
+
 ## [0.4.0] - 2026-08-05
 
 ### Added
