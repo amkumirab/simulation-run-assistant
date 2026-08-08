@@ -31,6 +31,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Guided local web assistant for COMSOL connection checks, run setup, queueing,
   targeted execution, monitoring, details, and retries
 - Native desktop assistant with no browser or local web server requirement
+- Local workspace profiles for recent models, COMSOL targets, formulas, and sweep presets
 - Native parameter-sweep builder with Cartesian preview, sequential execution,
   and runtime estimates based on recent COMSOL runs
 - Safe custom output formulas and comparison across successful simulation states
@@ -110,6 +111,19 @@ The desktop workspace provides native file pickers, COMSOL validation, editable
 model inputs, computed-output formulas, Run now and Queue only actions, run
 details, local artifact access, and visual comparison for repeated simulation
 states. It does not start an HTTP server or require a browser.
+
+Use the **Workspace profile** controls to save a repeatable local setup. A profile
+remembers the COMSOL executable, MPH model, Study or Job Sequence, timeout, core
+count, run label, raw parameter values, Fixed/Sweep modes, and computed-output
+formulas. Profiles are ordered by recent use and the last saved profile is
+restored when the desktop app starts. Select **Duplicate** to create a variant or
+**Delete** to remove only the local profile without affecting simulation results.
+
+Profiles are stored in `.sim-assistant/profiles.json`, which is excluded by the
+repository's `.gitignore`. **Export template** creates a shareable JSON template
+that deliberately excludes both the COMSOL executable path and MPH model path.
+Review parameter and formula names before publishing an exported template if the
+model contract itself is confidential.
 
 For a parameter sweep, change one or more input rows from **Fixed** to **Sweep**.
 Enter either an explicit comma-separated list or an inclusive numeric range:
@@ -273,6 +287,7 @@ src/simulation_assistant/
 |-- formulas.py     # Safe computed-output expression engine
 |-- manifest.py     # JSON validation and sweep expansion
 |-- notifications.py
+|-- profiles.py     # Local workspace profiles and sanitized template export
 |-- telegram_api.py # Minimal Telegram Bot API client
 |-- telegram_bot.py # Authorized long-polling command bot
 |-- reporting.py    # JSON and SVG artifacts
@@ -291,6 +306,8 @@ src/simulation_assistant/
   protected by a random in-memory token generated for each server session.
 - Secrets are read from the process environment; `.env` files are not loaded
   automatically.
+- Native workspace profiles are local to the current project directory and are
+  not synchronized between machines automatically.
 - The Telegram command bot is a foreground long-polling process.
 - COMSOL requires a local installation, compatible licenses, and a known model
   contract; arbitrary MPH files cannot be interpreted automatically.

@@ -5,7 +5,7 @@ import re
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
 
 from simulation_assistant.adapters import ComsolAdapter, MockElectromagneticAdapter
@@ -19,6 +19,12 @@ from simulation_assistant.formulas import (
     validate_output_formulas,
 )
 from simulation_assistant.notifications import notifier_from_environment
+from simulation_assistant.profiles import (
+    ProfileStore,
+    WorkspaceProfile,
+    missing_local_paths,
+    write_sanitized_profile_template,
+)
 from simulation_assistant.runner import SimulationRunner
 from simulation_assistant.storage import JobStore
 from simulation_assistant.sweeps import (
@@ -127,10 +133,12 @@ class DesktopApp:
         root: tk.Tk,
         database_path: str | Path,
         artifact_root: str | Path,
+        profile_path: str | Path = ".sim-assistant/profiles.json",
     ) -> None:
         self.root = root
         self.store = JobStore(database_path)
         self.store.initialize()
+        self.profile_store = ProfileStore(profile_path)
         self.artifact_root = Path(artifact_root)
         self.connection_report: dict[str, Any] | None = None
         self.parameter_variables: dict[str, tk.StringVar] = {}
@@ -146,6 +154,7 @@ class DesktopApp:
         self._create_variables()
         self._build_layout()
         self._load_defaults()
+        self._restore_last_profile()
         self.refresh_jobs()
 
     def _configure_window(self) -> None:
@@ -237,6 +246,10 @@ class DesktopApp:
         )
 
     def _create_variables(self) -> None:
+        self.profile_name_var = tk.StringVar()
+        self.profile_status_var = tk.StringVar(
+            value="Profiles stay local and are never added to run artifacts."
+        )
         self.executable_var = tk.StringVar()
         self.model_var = tk.StringVar()
         self.target_mode_var = tk.StringVar(value="study")
@@ -414,28 +427,78 @@ class DesktopApp:
             style="CardText.TLabel",
         ).grid(row=0, column=3, sticky="e")
 
-        self._field_label(card, "COMSOL executable", 1, 0)
+        profile_bar = ttk.Frame(card, style="Card.TFrame")
+        profile_bar.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(14, 2))
+        profile_bar.grid_columnconfigure(1, weight=1)
+        ttk.Label(profile_bar, text="Workspace profile", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 8)
+        )
+        self.profile_selector = ttk.Combobox(
+            profile_bar,
+            textvariable=self.profile_name_var,
+            state="normal",
+            width=30,
+        )
+        self.profile_selector.grid(row=0, column=1, sticky="ew")
+        self.profile_selector.bind("<<ComboboxSelected>>", self._profile_selected)
+        ttk.Button(
+            profile_bar,
+            text="New",
+            style="Secondary.TButton",
+            command=self._new_profile,
+        ).grid(row=0, column=2, padx=(8, 0))
+        ttk.Button(
+            profile_bar,
+            text="Save",
+            style="Primary.TButton",
+            command=self._save_profile,
+        ).grid(row=0, column=3, padx=(8, 0))
+        ttk.Button(
+            profile_bar,
+            text="Duplicate",
+            style="Secondary.TButton",
+            command=self._duplicate_profile,
+        ).grid(row=1, column=2, padx=(8, 0), pady=(8, 0))
+        ttk.Button(
+            profile_bar,
+            text="Delete",
+            style="Secondary.TButton",
+            command=self._delete_profile,
+        ).grid(row=1, column=3, padx=(8, 0), pady=(8, 0))
+        ttk.Button(
+            profile_bar,
+            text="Export template",
+            style="Secondary.TButton",
+            command=self._export_profile_template,
+        ).grid(row=1, column=4, padx=(8, 0), pady=(8, 0))
+        ttk.Label(
+            profile_bar,
+            textvariable=self.profile_status_var,
+            style="CardText.TLabel",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        self._field_label(card, "COMSOL executable", 2, 0)
         executable = ttk.Entry(card, textvariable=self.executable_var)
-        executable.grid(row=2, column=0, columnspan=3, sticky="ew", padx=(0, 8))
+        executable.grid(row=3, column=0, columnspan=3, sticky="ew", padx=(0, 8))
         ttk.Button(
             card,
             text="Browse",
             style="Secondary.TButton",
             command=self._browse_executable,
-        ).grid(row=2, column=3, sticky="ew")
+        ).grid(row=3, column=3, sticky="ew")
 
-        self._field_label(card, "MPH model", 3, 0)
+        self._field_label(card, "MPH model", 4, 0)
         model = ttk.Entry(card, textvariable=self.model_var)
-        model.grid(row=4, column=0, columnspan=3, sticky="ew", padx=(0, 8))
+        model.grid(row=5, column=0, columnspan=3, sticky="ew", padx=(0, 8))
         ttk.Button(
             card,
             text="Browse",
             style="Secondary.TButton",
             command=self._browse_model,
-        ).grid(row=4, column=3, sticky="ew")
+        ).grid(row=5, column=3, sticky="ew")
 
         mode_frame = ttk.Frame(card, style="Card.TFrame")
-        mode_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(13, 0))
+        mode_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(13, 0))
         mode_frame.grid_columnconfigure(1, weight=1)
         mode_frame.grid_columnconfigure(3, weight=1)
         ttk.Radiobutton(
@@ -795,6 +858,227 @@ class DesktopApp:
                 "COMSOL was detected. Choose an MPH model and check the connection."
             )
 
+    def _restore_last_profile(self) -> None:
+        try:
+            self._refresh_profile_choices()
+            profile = self.profile_store.last()
+        except ValueError as exc:
+            self.profile_status_var.set("Profile storage needs attention.")
+            self.activity_var.set(str(exc))
+            messagebox.showwarning("Workspace profiles", str(exc), parent=self.root)
+            return
+        if profile is not None:
+            self._apply_profile(profile, warn_missing=True)
+
+    def _refresh_profile_choices(self) -> None:
+        profiles = self.profile_store.list()
+        self.profile_selector.configure(values=[profile.name for profile in profiles])
+
+    def _profile_selected(self, _event: tk.Event | None = None) -> None:
+        name = self.profile_name_var.get().strip()
+        if not name:
+            return
+        try:
+            profile = self.profile_store.get(name)
+        except (KeyError, ValueError) as exc:
+            messagebox.showerror("Workspace profile", str(exc), parent=self.root)
+            return
+        self._apply_profile(profile, warn_missing=True)
+
+    def _apply_profile(
+        self,
+        profile: WorkspaceProfile,
+        *,
+        warn_missing: bool,
+    ) -> None:
+        self.connection_report = None
+        self._ignore_connection_changes = True
+        try:
+            self.profile_name_var.set(profile.name)
+            self.executable_var.set(profile.executable_path)
+            self.model_var.set(profile.model_path)
+            self.target_mode_var.set(profile.target_mode)
+            self.study_var.set(profile.study_tag)
+            self.job_var.set(profile.job_tag)
+            self.timeout_var.set(str(profile.timeout_seconds))
+            self.cores_var.set(str(profile.cores) if profile.cores is not None else "")
+            self.batch_var.set(profile.batch_name)
+            self._toggle_target()
+            self._populate_parameters(profile.parameters)
+            self._apply_profile_parameter_values(profile)
+            self._replace_formulas(profile.output_formulas)
+        finally:
+            self._ignore_connection_changes = False
+
+        try:
+            self.profile_store.set_last(profile.name)
+            self._refresh_profile_choices()
+        except (KeyError, OSError, ValueError) as exc:
+            self.profile_status_var.set(str(exc))
+        self.connection_status_var.set("Needs check")
+        self.status_label.configure(
+            background=COLORS["amber_soft"], foreground=COLORS["amber"]
+        )
+        self.model_summary_var.set(f"{Path(profile.model_path).name}  ·  profile loaded")
+        self._set_run_actions(False)
+
+        missing = missing_local_paths(profile)
+        if missing:
+            labels = ", ".join(label for label, _path in missing)
+            self.profile_status_var.set(
+                f"Loaded locally. Missing: {labels}. Browse to the new location and save again."
+            )
+            self.activity_var.set(f"Profile '{profile.name}' loaded with missing local files.")
+            if warn_missing:
+                details = "\n".join(f"{label}: {path}" for label, path in missing)
+                messagebox.showwarning(
+                    "Profile paths not found",
+                    "Some local files have moved or are unavailable:\n\n"
+                    f"{details}\n\nBrowse to each new location, then save the profile.",
+                    parent=self.root,
+                )
+        else:
+            self.profile_status_var.set(
+                "Loaded from local storage. Check the COMSOL connection before running."
+            )
+            self.activity_var.set(
+                f"Profile '{profile.name}' restored. Validate COMSOL to continue."
+            )
+
+    def _capture_profile(self, name: str) -> WorkspaceProfile:
+        timeout = self._positive_int(self.timeout_var.get(), "Timeout")
+        cores_text = self.cores_var.get().strip()
+        cores = self._positive_int(cores_text, "Core count") if cores_text else None
+        parameters = {
+            parameter_name: variable.get().strip()
+            for parameter_name, variable in self.parameter_variables.items()
+        }
+        modes = {
+            parameter_name: self.parameter_modes[parameter_name].get()
+            for parameter_name in parameters
+        }
+        return WorkspaceProfile.create(
+            name=name,
+            executable_path=self.executable_var.get(),
+            model_path=self.model_var.get(),
+            target_mode=self.target_mode_var.get(),
+            study_tag=self.study_var.get(),
+            job_tag=self.job_var.get(),
+            timeout_seconds=timeout,
+            cores=cores,
+            batch_name=self.batch_var.get(),
+            parameters=parameters,
+            parameter_modes=modes,
+            output_formulas=self._collect_formulas(),
+        )
+
+    def _save_profile(self) -> None:
+        name = self.profile_name_var.get().strip()
+        if not name:
+            name = simpledialog.askstring(
+                "Save workspace profile",
+                "Profile name:",
+                parent=self.root,
+            ) or ""
+        if not name:
+            return
+        try:
+            profile = self._capture_profile(name)
+            self.profile_store.save(profile)
+            saved = self.profile_store.get(name)
+            self._refresh_profile_choices()
+        except (KeyError, OSError, ValueError) as exc:
+            messagebox.showerror("Save workspace profile", str(exc), parent=self.root)
+            return
+        self.profile_name_var.set(saved.name)
+        self.profile_status_var.set(
+            f"Saved locally as '{saved.name}'. Local model paths are not added to run artifacts."
+        )
+        self.activity_var.set(f"Workspace profile '{saved.name}' was saved locally.")
+
+    def _new_profile(self) -> None:
+        self.profile_name_var.set("")
+        self.profile_status_var.set(
+            "Enter a new profile name. Current workspace values are kept as a starting point."
+        )
+        self.activity_var.set("Edit the workspace, enter a profile name, then select Save.")
+        self.profile_selector.focus_set()
+
+    def _duplicate_profile(self) -> None:
+        source_name = self.profile_name_var.get().strip()
+        if not source_name:
+            messagebox.showinfo(
+                "Duplicate workspace profile",
+                "Select a saved profile first.",
+                parent=self.root,
+            )
+            return
+        new_name = simpledialog.askstring(
+            "Duplicate workspace profile",
+            "New profile name:",
+            initialvalue=f"{source_name} copy",
+            parent=self.root,
+        )
+        if not new_name:
+            return
+        try:
+            duplicate = self.profile_store.duplicate(source_name, new_name)
+            self._refresh_profile_choices()
+        except (KeyError, OSError, ValueError) as exc:
+            messagebox.showerror("Duplicate workspace profile", str(exc), parent=self.root)
+            return
+        self._apply_profile(duplicate, warn_missing=False)
+        self.profile_status_var.set(f"Created local profile '{duplicate.name}'.")
+
+    def _delete_profile(self) -> None:
+        name = self.profile_name_var.get().strip()
+        if not name:
+            return
+        confirmed = messagebox.askyesno(
+            "Delete workspace profile",
+            f"Delete the local profile '{name}'?\n\nSimulation results are not affected.",
+            parent=self.root,
+        )
+        if not confirmed:
+            return
+        try:
+            self.profile_store.delete(name)
+            self._refresh_profile_choices()
+        except (KeyError, OSError, ValueError) as exc:
+            messagebox.showerror("Delete workspace profile", str(exc), parent=self.root)
+            return
+        self.profile_name_var.set("")
+        self.profile_status_var.set(
+            "Profile deleted locally. Current workspace values were kept."
+        )
+        self.activity_var.set(f"Workspace profile '{name}' was deleted.")
+
+    def _export_profile_template(self) -> None:
+        name = self.profile_name_var.get().strip() or "workspace-template"
+        try:
+            profile = self._capture_profile(name)
+        except ValueError as exc:
+            messagebox.showerror("Export profile template", str(exc), parent=self.root)
+            return
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "-", name).strip("-")
+        selected = filedialog.asksaveasfilename(
+            title="Export sanitized workspace template",
+            defaultextension=".json",
+            initialfile=f"{safe_name or 'workspace-template'}.json",
+            filetypes=[("JSON file", "*.json"), ("All files", "*")],
+        )
+        if not selected:
+            return
+        try:
+            output = write_sanitized_profile_template(selected, profile)
+        except OSError as exc:
+            messagebox.showerror("Export profile template", str(exc), parent=self.root)
+            return
+        self.profile_status_var.set(
+            "Template exported without the COMSOL executable or MPH model path."
+        )
+        self.activity_var.set(f"Sanitized workspace template exported to {output.name}.")
+
     def _browse_executable(self) -> None:
         selected = filedialog.askopenfilename(
             title="Select COMSOL batch executable",
@@ -906,6 +1190,9 @@ class DesktopApp:
             f"{model['filename']} is ready. Review inputs and define optional outputs."
         )
         self._populate_parameters(model.get("parameters", {}))
+        selected_profile = self._selected_saved_profile()
+        if selected_profile is not None:
+            self._apply_profile_parameter_values(selected_profile)
         self._populate_output_symbols(report.get("output_symbols", []))
         self._set_run_actions(True)
         if config.job_tag:
@@ -972,7 +1259,28 @@ class DesktopApp:
             mode.trace_add("write", self._update_sweep_preview)
         self._update_sweep_preview()
 
-    def add_formula_row(self) -> None:
+    def _selected_saved_profile(self) -> WorkspaceProfile | None:
+        name = self.profile_name_var.get().strip()
+        if not name:
+            return None
+        try:
+            return self.profile_store.get(name)
+        except (KeyError, ValueError):
+            return None
+
+    def _apply_profile_parameter_values(self, profile: WorkspaceProfile) -> None:
+        for name, variable in self.parameter_variables.items():
+            if name not in profile.parameters:
+                continue
+            variable.set(profile.parameters[name])
+            self.parameter_modes[name].set(profile.parameter_modes.get(name, "Fixed"))
+        self._update_sweep_preview()
+
+    def add_formula_row(
+        self,
+        name: str | None = None,
+        expression: str | None = None,
+    ) -> None:
         row_frame = ttk.Frame(self.formulas_frame.inner, style="Card.TFrame")
         row_frame.pack(fill="x", padx=(2, 4), pady=4)
         name_var = tk.StringVar()
@@ -992,12 +1300,25 @@ class DesktopApp:
             command=lambda: self._remove_formula_row(row_frame),
         )
         remove.pack(side="right")
-        if not self.formula_rows:
+        if name is not None or expression is not None:
+            name_var.set(name or "")
+            expression_var.set(expression or "")
+        elif not self.formula_rows:
             name_var.set("solve_time_ratio")
             expression_var.set(
                 "comsol_duration_seconds / comsol_reported_total_seconds"
             )
         self.formula_rows.append((row_frame, name_var, expression_var))
+
+    def _replace_formulas(self, formulas: dict[str, str]) -> None:
+        for frame, _name_var, _expression_var in self.formula_rows:
+            frame.destroy()
+        self.formula_rows.clear()
+        if formulas:
+            for name, expression in formulas.items():
+                self.add_formula_row(name, expression)
+        else:
+            self.add_formula_row("", "")
 
     def _remove_formula_row(self, frame: ttk.Frame) -> None:
         for row in list(self.formula_rows):
@@ -1620,7 +1941,11 @@ class DesktopApp:
         return str(value)
 
 
-def run_desktop(database_path: str | Path, artifact_root: str | Path) -> None:
+def run_desktop(
+    database_path: str | Path,
+    artifact_root: str | Path,
+    profile_path: str | Path = ".sim-assistant/profiles.json",
+) -> None:
     root = tk.Tk()
-    DesktopApp(root, database_path, artifact_root)
+    DesktopApp(root, database_path, artifact_root, profile_path)
     root.mainloop()

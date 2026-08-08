@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.0] - 2026-08-08
+
+### Added
+
+- Local native workspace profiles for COMSOL paths, targets, run settings,
+  parameter presets, Fixed/Sweep modes, and computed-output formulas
+- Recent-profile ordering and automatic restoration of the last saved workspace
+- Profile creation, update, duplication, deletion, and missing-path warnings
+- Sanitized JSON template export that excludes executable and MPH model paths
+- Atomic profile-file updates and validation for profile names, targets, sweep
+  definitions, core counts, timeouts, and formulas
+- Profile storage, lifecycle, validation, path-warning, and privacy tests
+
+### Changed
+
+- Native model inputs and formulas are reapplied after a saved model is inspected
+- Package version increased to 0.6.0
+
 ## [0.5.0] - 2026-08-06
 
 ### Added

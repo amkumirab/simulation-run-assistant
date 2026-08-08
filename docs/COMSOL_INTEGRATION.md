@@ -115,6 +115,27 @@ Sweep execution is sequential. In **Compare runs**, select the batch, a numeric
 input for the X axis, and an output metric. The highest value is highlighted;
 the visible comparison can be exported as a UTF-8 CSV file.
 
+### Local workspace profiles
+
+The native app can save the complete repeatable workspace under a profile name:
+
+- Local COMSOL executable and MPH model paths
+- Study or Job Sequence selection
+- Timeout, core count, and run label
+- Parameter values and Fixed/Sweep modes
+- Computed-output formulas
+
+Profiles are stored only in `.sim-assistant/profiles.json`. This directory is
+ignored by Git, and profile paths are never copied into job result artifacts.
+The most recently saved profile is restored on the next desktop launch. The app
+reports moved or unavailable local files and keeps execution disabled until the
+COMSOL connection is checked again.
+
+Use **Duplicate** to create a model variant without changing the original
+profile. Use **Export template** to create a JSON file without either local path;
+the exported file retains target tags, run settings, parameter presets, and
+formulas so the non-path parts of a workflow can be reviewed or shared.
+
 Supported formula operations are `+`, `-`, `*`, `/`, `%`, and `**`. Supported
 functions include `abs`, `sqrt`, `log`, `log10`, `exp`, `sin`, `cos`, `tan`,
 `min`, and `max`; constants `pi` and `e` are also available. Formulas are parsed
