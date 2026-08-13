@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.0] - 2026-08-13
+
+### Added
+
+- MPH Plot Group discovery with tags, labels, plot types, and dimensions
+- Native multi-select Plot Outputs control with Select all and Clear actions
+- Validated Plot Group selection with duplicate, syntax, model-contract, and
+  12-plot limit checks
+- Plot selections in local workspace profiles and sanitized profile templates
+- Selected Plot Group metadata in COMSOL connection and simulation results
+- Plot discovery, ordering, validation, and profile-persistence tests
+
+### Changed
+
+- Native connection summaries now show the number of detected Plot Groups
+- Package version increased to 0.7.0
+
 ## [0.6.0] - 2026-08-08
 
 ### Added

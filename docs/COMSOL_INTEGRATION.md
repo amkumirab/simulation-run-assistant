@@ -124,6 +124,7 @@ The native app can save the complete repeatable workspace under a profile name:
 - Timeout, core count, and run label
 - Parameter values and Fixed/Sweep modes
 - Computed-output formulas
+- Selected 1D, 2D, and 3D Plot Group tags
 
 Profiles are stored only in `.sim-assistant/profiles.json`. This directory is
 ignored by Git, and profile paths are never copied into job result artifacts.
@@ -135,6 +136,18 @@ Use **Duplicate** to create a model variant without changing the original
 profile. Use **Export template** to create a JSON file without either local path;
 the exported file retains target tags, run settings, parameter presets, and
 formulas so the non-path parts of a workflow can be reviewed or shared.
+
+### Plot Group discovery
+
+The connection check reads Plot Group metadata directly from the MPH model and
+lists each feature tag, dimension, and label in the native workspace. Multiple
+plots can be selected, with a limit of 12 per profile. Selection is validated
+against the currently inspected model before a COMSOL run; missing, duplicated,
+or malformed tags are rejected instead of silently referring to another result.
+
+This release stores the visual-output contract but does not export images yet.
+The next Plot Explorer increment will use these selected tags to create
+job-specific PNG artifacts after each solve.
 
 Supported formula operations are `+`, `-`, `*`, `/`, `%`, and `**`. Supported
 functions include `abs`, `sqrt`, `log`, `log10`, `exp`, `sin`, `cos`, `tan`,

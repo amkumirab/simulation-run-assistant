@@ -21,6 +21,8 @@ from simulation_assistant.types import SimulationResult
 
 ProcessRunner = Callable[..., subprocess.CompletedProcess[str]]
 PARAMETER_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+FEATURE_TAG = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+MAX_SELECTED_PLOTS = 12
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,7 @@ class ComsolConfig:
     job_tag: str | None = None
     timeout_seconds: int = 3600
     cores: int | None = None
+    plot_tags: tuple[str, ...] = ()
 
     @classmethod
     def from_environment(
@@ -42,6 +45,7 @@ class ComsolConfig:
         job_tag: str | None = None,
         timeout_seconds: int | None = None,
         cores: int | None = None,
+        plot_tags: tuple[str, ...] | list[str] | None = None,
     ) -> "ComsolConfig":
         executable_value = executable or os.getenv("COMSOL_EXECUTABLE")
         resolved_executable = (
@@ -70,6 +74,7 @@ class ComsolConfig:
             job_tag=job_tag or os.getenv("COMSOL_JOB_TAG"),
             timeout_seconds=timeout_value,
             cores=core_value,
+            plot_tags=tuple(plot_tags or ()),
         )
         config.validate()
         return config
@@ -87,6 +92,7 @@ class ComsolConfig:
             raise ValueError("COMSOL timeout must be greater than zero")
         if self.cores is not None and self.cores < 1:
             raise ValueError("COMSOL core count must be greater than zero")
+        _validate_plot_tag_syntax(self.plot_tags)
 
 
 @dataclass(frozen=True)
@@ -100,6 +106,7 @@ class ComsolModelInfo:
     parameters: dict[str, str]
     studies: list[dict[str, str]]
     numerical_features: list[dict[str, str]]
+    plot_groups: list[dict[str, str]]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -128,6 +135,7 @@ class ComsolAdapter(SimulationAdapter):
         config.validate()
         model_info = inspect_mph(config.model_path)
         selected_study = _select_study(config.study_tag, config.job_tag, model_info)
+        selected_plots = validate_plot_selection(config.plot_tags, model_info.plot_groups)
 
         if work_dir is None:
             work_dir = Path(".sim-assistant") / "comsol-runs" / uuid.uuid4().hex
@@ -195,6 +203,7 @@ class ComsolAdapter(SimulationAdapter):
                 "output_model": str(output_model.resolve()),
                 "batch_log": str(batch_log.resolve()),
                 "tables": tables,
+                "selected_plot_groups": selected_plots,
                 "table_results_status": (
                     "fresh_by_job_contract"
                     if tables_are_fresh
@@ -244,6 +253,7 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
     parameters: dict[str, str] = {}
     studies: list[dict[str, str]] = []
     numerical_features: list[dict[str, str]] = []
+    plot_groups: list[dict[str, str]] = []
     for node in _walk_json(smodel):
         api_class = str(node.get("apiClass", ""))
         if api_class == "ModelParamGroup":
@@ -265,6 +275,18 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
                     "type": str(node.get("apiType", "")),
                 }
             )
+        elif api_class == "ResultFeature" and str(node.get("apiType", "")).startswith(
+            "PlotGroup"
+        ):
+            plot_type = str(node.get("apiType", ""))
+            plot_groups.append(
+                {
+                    "tag": str(node.get("tag", "")),
+                    "label": str(node.get("label", "")),
+                    "type": plot_type,
+                    "dimension": plot_type.removeprefix("PlotGroup"),
+                }
+            )
 
     physics_value = model_info_root.get("physics", "")
     physics_node = model_info_root.find("physicsInfo")
@@ -280,6 +302,7 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
         parameters=parameters,
         studies=studies,
         numerical_features=numerical_features,
+        plot_groups=plot_groups,
     )
 
 
@@ -308,6 +331,7 @@ def check_comsol(
     if licenses.returncode != 0:
         raise RuntimeError("COMSOL license check failed")
     selected_study = _select_study(config.study_tag, config.job_tag, info)
+    selected_plots = validate_plot_selection(config.plot_tags, info.plot_groups)
     try:
         output_symbols = catalog_mph_output_symbols(config.model_path)
     except ValueError:
@@ -319,6 +343,7 @@ def check_comsol(
         "model": info.to_dict(),
         "selected_study": selected_study if not config.job_tag else None,
         "selected_job": config.job_tag,
+        "selected_plot_groups": selected_plots,
         "license_requirements": [
             line.strip() for line in licenses.stdout.splitlines() if line.strip()
         ],
@@ -331,6 +356,37 @@ def check_comsol(
         "timeout_seconds": config.timeout_seconds,
         "cores": config.cores,
     }
+
+
+def validate_plot_selection(
+    selected_tags: tuple[str, ...] | list[str],
+    available_plot_groups: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Resolve requested plot tags against the inspected MPH model contract."""
+    tags = _validate_plot_tag_syntax(selected_tags)
+    available = {
+        plot["tag"]: plot
+        for plot in available_plot_groups
+        if plot.get("tag")
+    }
+    missing = [tag for tag in tags if tag not in available]
+    if missing:
+        available_text = ", ".join(available) or "none"
+        raise ValueError(
+            f"Plot group(s) not found: {', '.join(missing)}; available: {available_text}"
+        )
+    return [dict(available[tag]) for tag in tags]
+
+
+def _validate_plot_tag_syntax(selected_tags: tuple[str, ...] | list[str]) -> list[str]:
+    tags = [str(tag).strip() for tag in selected_tags]
+    if any(not tag or not FEATURE_TAG.fullmatch(tag) for tag in tags):
+        raise ValueError("COMSOL plot tags must contain only letters, numbers, and underscores")
+    if len(tags) != len(set(tags)):
+        raise ValueError("COMSOL plot tags cannot be duplicated")
+    if len(tags) > MAX_SELECTED_PLOTS:
+        raise ValueError(f"Select no more than {MAX_SELECTED_PLOTS} COMSOL plot groups")
+    return tags
 
 
 def extract_mph_tables(model_path: str | Path, max_rows: int = 1000) -> list[dict[str, Any]]:

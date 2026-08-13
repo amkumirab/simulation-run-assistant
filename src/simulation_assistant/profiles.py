@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ from simulation_assistant.sweeps import parse_sweep_values
 
 
 PROFILE_SCHEMA_VERSION = 1
+FEATURE_TAG = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _utc_now() -> str:
@@ -33,6 +35,7 @@ class WorkspaceProfile:
     parameters: dict[str, str]
     parameter_modes: dict[str, str]
     output_formulas: dict[str, str]
+    plot_tags: tuple[str, ...]
     updated_at: str
 
     @classmethod
@@ -51,6 +54,7 @@ class WorkspaceProfile:
         parameters: Mapping[str, str] | None = None,
         parameter_modes: Mapping[str, str] | None = None,
         output_formulas: Mapping[str, str] | None = None,
+        plot_tags: tuple[str, ...] | list[str] | None = None,
         updated_at: str | None = None,
     ) -> WorkspaceProfile:
         profile = cls(
@@ -70,6 +74,7 @@ class WorkspaceProfile:
             output_formulas={
                 str(key): str(value) for key, value in (output_formulas or {}).items()
             },
+            plot_tags=tuple(str(tag) for tag in (plot_tags or ())),
             updated_at=updated_at or _utc_now(),
         )
         validate_profile(profile)
@@ -95,6 +100,7 @@ class WorkspaceProfile:
                 output_formulas=_string_mapping(
                     data.get("output_formulas", {}), "output_formulas"
                 ),
+                plot_tags=_string_list(data.get("plot_tags", []), "plot_tags"),
                 updated_at=str(data.get("updated_at") or _utc_now()),
             )
         except (KeyError, TypeError, ValueError) as exc:
@@ -108,6 +114,12 @@ def _string_mapping(value: Any, label: str) -> dict[str, str]:
     if not isinstance(value, dict):
         raise ValueError(f"Profile field '{label}' must be an object")
     return {str(key): str(item) for key, item in value.items()}
+
+
+def _string_list(value: Any, label: str) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError(f"Profile field '{label}' must be a list")
+    return [str(item) for item in value]
 
 
 def validate_profile(profile: WorkspaceProfile) -> None:
@@ -142,6 +154,12 @@ def validate_profile(profile: WorkspaceProfile) -> None:
         if mode == "Sweep":
             parse_sweep_values(value)
     validate_output_formulas(profile.output_formulas)
+    if len(profile.plot_tags) != len(set(profile.plot_tags)):
+        raise ValueError("Profile plot tags cannot be duplicated")
+    if len(profile.plot_tags) > 12:
+        raise ValueError("Profile cannot select more than 12 plot groups")
+    if any(not FEATURE_TAG.fullmatch(tag) for tag in profile.plot_tags):
+        raise ValueError("Profile plot tags contain an invalid COMSOL feature tag")
 
 
 def missing_local_paths(profile: WorkspaceProfile) -> list[tuple[str, Path]]:
@@ -327,6 +345,7 @@ def sanitized_profile_template(profile: WorkspaceProfile) -> dict[str, Any]:
             for name, value in profile.parameters.items()
         },
         "output_formulas": dict(profile.output_formulas),
+        "plot_tags": list(profile.plot_tags),
     }
 
 

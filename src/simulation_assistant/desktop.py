@@ -4,6 +4,7 @@ import os
 import re
 import threading
 import tkinter as tk
+from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
@@ -141,6 +142,7 @@ class DesktopApp:
         self.profile_store = ProfileStore(profile_path)
         self.artifact_root = Path(artifact_root)
         self.connection_report: dict[str, Any] | None = None
+        self.selected_plot_tags: list[str] = []
         self.parameter_variables: dict[str, tk.StringVar] = {}
         self.parameter_modes: dict[str, tk.StringVar] = {}
         self.formula_rows: list[tuple[ttk.Frame, tk.StringVar, tk.StringVar]] = []
@@ -544,6 +546,49 @@ class DesktopApp:
         self.check_button.grid(row=0, column=8)
         self._toggle_target()
 
+        plot_frame = ttk.Frame(card, style="Card.TFrame")
+        plot_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(14, 0))
+        plot_frame.grid_columnconfigure(1, weight=1)
+        ttk.Label(plot_frame, text="Plot outputs", style="Field.TLabel").grid(
+            row=0, column=0, sticky="nw", padx=(0, 10), pady=(7, 0)
+        )
+        self.plot_groups_list = tk.Listbox(
+            plot_frame,
+            height=3,
+            selectmode=tk.EXTENDED,
+            exportselection=False,
+            background="white",
+            foreground=COLORS["ink"],
+            selectbackground=COLORS["blue"],
+            selectforeground="white",
+            highlightthickness=1,
+            highlightbackground=COLORS["line"],
+            relief="flat",
+            font=("Segoe UI", 9),
+        )
+        self.plot_groups_list.grid(row=0, column=1, sticky="ew")
+        self.plot_groups_list.bind("<<ListboxSelect>>", self._plot_selection_changed)
+        plot_actions = ttk.Frame(plot_frame, style="Card.TFrame")
+        plot_actions.grid(row=0, column=2, sticky="n", padx=(8, 0))
+        ttk.Button(
+            plot_actions,
+            text="Select all",
+            style="Secondary.TButton",
+            command=self._select_all_plots,
+        ).pack(fill="x")
+        ttk.Button(
+            plot_actions,
+            text="Clear",
+            style="Secondary.TButton",
+            command=self._clear_plot_selection,
+        ).pack(fill="x", pady=(6, 0))
+        self.plot_selection_note = ttk.Label(
+            plot_frame,
+            text="Check the connection to discover saved 1D, 2D, and 3D Plot Groups.",
+            style="CardText.TLabel",
+        )
+        self.plot_selection_note.grid(row=1, column=1, sticky="w", pady=(6, 0))
+
     def _build_parameters_card(self, parent: ttk.Frame) -> None:
         card = ttk.Frame(parent, style="Card.TFrame", padding=18)
         card.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
@@ -903,6 +948,14 @@ class DesktopApp:
             self.timeout_var.set(str(profile.timeout_seconds))
             self.cores_var.set(str(profile.cores) if profile.cores is not None else "")
             self.batch_var.set(profile.batch_name)
+            self.selected_plot_tags = list(profile.plot_tags)
+            self.plot_groups_list.delete(0, tk.END)
+            self.plot_selection_note.configure(
+                text=(
+                    f"{len(self.selected_plot_tags)} saved plot selection(s); "
+                    "check the connection to match them to this model."
+                )
+            )
             self._toggle_target()
             self._populate_parameters(profile.parameters)
             self._apply_profile_parameter_values(profile)
@@ -970,6 +1023,7 @@ class DesktopApp:
             parameters=parameters,
             parameter_modes=modes,
             output_formulas=self._collect_formulas(),
+            plot_tags=tuple(self.selected_plot_tags),
         )
 
     def _save_profile(self) -> None:
@@ -1093,6 +1147,11 @@ class DesktopApp:
             filetypes=[("COMSOL model", "*.mph"), ("All files", "*")],
         )
         if selected:
+            self.selected_plot_tags = []
+            self.plot_groups_list.delete(0, tk.END)
+            self.plot_selection_note.configure(
+                text="Check the connection to discover this model's Plot Groups."
+            )
             self.model_var.set(selected)
 
     def _toggle_target(self) -> None:
@@ -1132,6 +1191,7 @@ class DesktopApp:
             job_tag=self.job_var.get().strip() or None if mode == "job" else None,
             timeout_seconds=timeout,
             cores=cores,
+            plot_tags=tuple(self.selected_plot_tags),
         )
         config.validate()
         return config
@@ -1158,7 +1218,7 @@ class DesktopApp:
         self.activity_var.set("Inspecting the model and validating COMSOL licenses...")
         self._run_background(
             "check",
-            lambda: check_comsol(config),
+            lambda: check_comsol(replace(config, plot_tags=())),
             lambda report: self._connection_ready(config, report),
         )
 
@@ -1180,7 +1240,7 @@ class DesktopApp:
             self._ignore_connection_changes = False
         model = report["model"]
         self.model_summary_var.set(
-            f"{model['filename']}  ·  {report.get('installed_version', 'COMSOL')}"
+            f"{model['filename']}  ·  {len(model.get('plot_groups', []))} plot group(s)"
         )
         self.connection_status_var.set("Connected")
         self.status_label.configure(
@@ -1194,11 +1254,63 @@ class DesktopApp:
         if selected_profile is not None:
             self._apply_profile_parameter_values(selected_profile)
         self._populate_output_symbols(report.get("output_symbols", []))
+        self._populate_plot_groups(model.get("plot_groups", []))
         self._set_run_actions(True)
         if config.job_tag:
             self.freshness_var.set(
                 "Physical output formulas use tables reevaluated by the selected job sequence."
             )
+
+    def _populate_plot_groups(self, plot_groups: list[dict[str, str]]) -> None:
+        requested = set(self.selected_plot_tags)
+        self.plot_groups_list.delete(0, tk.END)
+        available_tags: list[str] = []
+        for plot in plot_groups:
+            tag = str(plot.get("tag", ""))
+            if not tag:
+                continue
+            index = len(available_tags)
+            available_tags.append(tag)
+            label = str(plot.get("label") or tag)
+            dimension = str(plot.get("dimension") or "plot")
+            self.plot_groups_list.insert(tk.END, f"{tag}  ·  {dimension}  ·  {label}")
+            if tag in requested:
+                self.plot_groups_list.selection_set(index)
+        self.selected_plot_tags = [tag for tag in available_tags if tag in requested]
+        missing = sorted(requested.difference(available_tags))
+        count = len(self.selected_plot_tags)
+        self.plot_selection_note.configure(
+            text=(
+                f"{count} selected; saved tag(s) not found: {', '.join(missing)}."
+                if missing
+                else f"{count} plot group(s) selected for the next export step."
+                if plot_groups
+                else "No Plot Groups were found in this model."
+            )
+        )
+
+    def _plot_selection_changed(self, _event: tk.Event | None = None) -> None:
+        if self.connection_report is None:
+            return
+        plot_groups = self.connection_report.get("model", {}).get("plot_groups", [])
+        tags = [str(plot.get("tag", "")) for plot in plot_groups if plot.get("tag")]
+        self.selected_plot_tags = [
+            tags[index]
+            for index in self.plot_groups_list.curselection()
+            if index < len(tags)
+        ]
+        self.plot_selection_note.configure(
+            text=f"{len(self.selected_plot_tags)} plot group(s) selected for export."
+        )
+
+    def _select_all_plots(self) -> None:
+        self.plot_groups_list.selection_set(0, tk.END)
+        self._plot_selection_changed()
+
+    def _clear_plot_selection(self) -> None:
+        self.plot_groups_list.selection_clear(0, tk.END)
+        self.selected_plot_tags = []
+        self.plot_selection_note.configure(text="No Plot Groups selected.")
 
     def _show_empty_parameters(self) -> None:
         for child in self.parameters_frame.inner.winfo_children():

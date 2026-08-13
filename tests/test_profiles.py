@@ -25,6 +25,7 @@ def make_profile(name: str = "Wireless charger") -> WorkspaceProfile:
         parameters={"f0": "70:100:10[kHz]", "gap": "15[cm]"},
         parameter_modes={"f0": "Sweep", "gap": "Fixed"},
         output_formulas={"time_ratio": "duration / total"},
+        plot_tags=("pg1", "pg3"),
     )
 
 
@@ -78,6 +79,16 @@ class ProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Could not read"):
                 ProfileStore(path).list()
 
+    def test_rejects_invalid_or_duplicate_plot_tags(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicated"):
+            WorkspaceProfile.create(
+                **{**make_profile().to_dict(), "plot_tags": ["pg1", "pg1"]}
+            )
+        with self.assertRaisesRegex(ValueError, "invalid"):
+            WorkspaceProfile.create(
+                **{**make_profile().to_dict(), "plot_tags": ["pg-1"]}
+            )
+
     def test_sanitized_export_never_contains_local_paths(self) -> None:
         profile = make_profile()
         template = sanitized_profile_template(profile)
@@ -86,6 +97,7 @@ class ProfileTests(unittest.TestCase):
         self.assertNotIn(profile.model_path, serialized)
         self.assertTrue(template["local_paths_excluded"])
         self.assertEqual(template["parameters"]["f0"]["mode"], "Sweep")
+        self.assertEqual(template["plot_tags"], ["pg1", "pg3"])
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output = write_sanitized_profile_template(

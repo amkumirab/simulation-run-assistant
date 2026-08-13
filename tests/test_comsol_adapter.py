@@ -13,6 +13,7 @@ from simulation_assistant.adapters.comsol import (
     catalog_mph_output_symbols,
     extract_mph_tables,
     inspect_mph,
+    validate_plot_selection,
 )
 
 
@@ -56,6 +57,7 @@ class ComsolAdapterTests(unittest.TestCase):
             job_tag="batch1" if use_job else None,
             timeout_seconds=30,
             cores=2,
+            plot_tags=("pg1",),
         )
 
     def test_inspects_model_contract(self) -> None:
@@ -65,6 +67,23 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(info.required_products, ["COMSOL", "ACDC"])
         self.assertEqual(info.parameters, {"frequency": "85[kHz]"})
         self.assertEqual(info.studies, [{"tag": "std1", "label": "Study 1"}])
+        self.assertEqual(
+            info.plot_groups,
+            [
+                {
+                    "tag": "pg1",
+                    "label": "Magnetic Flux Density",
+                    "type": "PlotGroup2D",
+                    "dimension": "2D",
+                },
+                {
+                    "tag": "pg2",
+                    "label": "Revolved Geometry",
+                    "type": "PlotGroup3D",
+                    "dimension": "3D",
+                },
+            ],
+        )
 
     def test_extracts_scalar_metrics_and_series_tables(self) -> None:
         tables = extract_mph_tables(self.model)
@@ -128,6 +147,8 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(report["selected_study"], "std1")
         self.assertEqual(report["license_requirements"], ["COMSOL", "ACDC"])
         self.assertEqual(report["output_symbols"][0]["key"], "tbl1_1_frequency_hz")
+        self.assertEqual(report["selected_plot_groups"][0]["tag"], "pg1")
+        self.assertEqual(len(report["model"]["plot_groups"]), 2)
         self.assertEqual(len(fake_process.commands), 2)
 
     def test_catalogs_formula_symbols_from_scalar_tables(self) -> None:
@@ -136,6 +157,19 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(len(symbols), 2)
         self.assertEqual(symbols[1]["column"], "value (H)")
         self.assertEqual(symbols[1]["saved_value"], 1.2e-7)
+
+    def test_validates_plot_group_selection(self) -> None:
+        plots = inspect_mph(self.model).plot_groups
+
+        selected = validate_plot_selection(["pg2", "pg1"], plots)
+
+        self.assertEqual([plot["tag"] for plot in selected], ["pg2", "pg1"])
+        with self.assertRaisesRegex(ValueError, "not found"):
+            validate_plot_selection(["missing"], plots)
+        with self.assertRaisesRegex(ValueError, "duplicated"):
+            validate_plot_selection(["pg1", "pg1"], plots)
+        with self.assertRaisesRegex(ValueError, "no more than"):
+            validate_plot_selection([f"pg{index}" for index in range(13)], plots)
 
 
 def _write_test_mph(path: Path) -> None:
@@ -157,6 +191,18 @@ def _write_test_mph(path: Path) -> None:
                 "apiType": "EvalGlobal",
                 "tag": "gev1",
                 "label": "Global Evaluation 1",
+            },
+            {
+                "apiClass": "ResultFeature",
+                "apiType": "PlotGroup2D",
+                "tag": "pg1",
+                "label": "Magnetic Flux Density",
+            },
+            {
+                "apiClass": "ResultFeature",
+                "apiType": "PlotGroup3D",
+                "tag": "pg2",
+                "label": "Revolved Geometry",
             },
         ],
     }
