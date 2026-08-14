@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.8.0] - 2026-08-14
+
+### Added
+
+- Automatic PNG export for selected COMSOL Plot Groups after a successful solve
+- One-pass COMSOL image exporter for multiple selected 1D, 2D, and 3D plots
+- Stable plot filenames and per-image artifact metadata with file size and path
+- Plot export status and errors in the native job-details window
+- Unit coverage for successful, skipped, and isolated plot-export failures
+
+### Changed
+
+- Optional plot failures no longer discard a successfully solved COMSOL model
+- COMSOL plot rendering uses software graphics for unattended desktop runs
+- Package version increased to 0.8.0
+
 ## [0.7.0] - 2026-08-13
 
 ### Added

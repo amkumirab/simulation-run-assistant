@@ -145,9 +145,16 @@ plots can be selected, with a limit of 12 per profile. Selection is validated
 against the currently inspected model before a COMSOL run; missing, duplicated,
 or malformed tags are rejected instead of silently referring to another result.
 
-This release stores the visual-output contract but does not export images yet.
-The next Plot Explorer increment will use these selected tags to create
-job-specific PNG artifacts after each solve.
+After a successful solve, the adapter opens `output.mph` through the official
+COMSOL Java API and exports every selected Plot Group as a PNG. All selected
+plots are handled in one COMSOL process so the solved model is loaded only once.
+Stable filenames combine the feature tag and label, and each exported image is
+recorded in result metadata with its dimension, absolute artifact path, and file
+size.
+
+The exporter uses COMSOL software rendering and therefore does not require an
+open COMSOL Desktop window. It does require `comsolcompile` beside the configured
+batch executable; this compiler is included with a standard COMSOL installation.
 
 Supported formula operations are `+`, `-`, `*`, `/`, `%`, and `**`. Supported
 functions include `abs`, `sqrt`, `log`, `log10`, `exp`, `sin`, `cos`, `tan`,
@@ -215,6 +222,9 @@ artifacts/job-000001/
 |-- input.mph
 |-- output.mph
 |-- comsol.log
+|-- plot-export.log       Present when one or more Plot Groups are selected
+|-- plots/
+|   `-- pg1-magnetic-flux-density.png
 |-- result.json
 `-- response.svg       Present only when a multi-row numeric table is found
 ```
@@ -249,6 +259,8 @@ contract are included in metrics and plots.
 - A Python-side timeout provides an additional 60-second shutdown allowance.
 - A missing output model, nonzero exit code, invalid parameter, or license error
   marks only that queue job as failed.
+- A plot compilation or image-export error is recorded per selected Plot Group
+  but does not discard a successfully solved model or its numerical results.
 - The final COMSOL log lines are included in the stored job error for diagnosis.
 - Telegram notification failures never alter the COMSOL job status.
 

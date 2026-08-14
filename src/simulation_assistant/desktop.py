@@ -1626,10 +1626,13 @@ class DesktopApp:
         job = self.store.get(job_id)
         self.refresh_jobs()
         self.refresh_comparison()
-        errors = (job.result or {}).get("metadata", {}).get("formula_errors", {})
-        if job.status == JobStatus.SUCCEEDED and errors:
+        metadata = (job.result or {}).get("metadata", {})
+        formula_errors = metadata.get("formula_errors", {})
+        plot_errors = metadata.get("plot_export_errors", {})
+        if job.status == JobStatus.SUCCEEDED and (formula_errors or plot_errors):
+            issues = len(formula_errors) + len(plot_errors)
             self.activity_var.set(
-                f"Job #{job_id} succeeded; {len(errors)} computed output(s) need attention."
+                f"Job #{job_id} succeeded; {issues} optional output(s) need attention."
             )
         else:
             self.activity_var.set(f"Job #{job_id} finished with status: {job.status.value}.")
@@ -1691,13 +1694,23 @@ class DesktopApp:
 
         notebook = ttk.Notebook(container)
         notebook.pack(fill="both", expand=True)
+        metadata = (job.result or {}).get("metadata", {})
+        plot_values = {"status": metadata.get("plot_export_status", "not_requested")}
+        plot_values.update(
+            {
+                str(item.get("tag", "plot")): item.get("filename", "")
+                for item in metadata.get("plot_exports", [])
+            }
+        )
         for title, values in (
             ("Inputs", job.parameters),
             ("Formulas", job.output_formulas),
             ("Metrics", (job.result or {}).get("metrics", {})),
+            ("Plot exports", plot_values),
+            ("Plot errors", metadata.get("plot_export_errors", {})),
             (
                 "Formula errors",
-                (job.result or {}).get("metadata", {}).get("formula_errors", {}),
+                metadata.get("formula_errors", {}),
             ),
         ):
             frame = ttk.Frame(notebook, style="Card.TFrame", padding=12)

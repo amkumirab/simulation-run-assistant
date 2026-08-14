@@ -23,6 +23,46 @@ ProcessRunner = Callable[..., subprocess.CompletedProcess[str]]
 PARAMETER_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 FEATURE_TAG = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MAX_SELECTED_PLOTS = 12
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PLOT_EXPORTER_CLASS = "SimulationAssistantPlotExport"
+PLOT_EXPORTER_SOURCE = r"""import com.comsol.model.Model;
+import com.comsol.model.util.ModelUtil;
+
+public class SimulationAssistantPlotExport {
+    public static void main(String[] args) throws Exception {
+        if (args.length < 1 || (args.length - 1) % 2 != 0) {
+            throw new IllegalArgumentException(
+                "Expected model path and plot/output pairs"
+            );
+        }
+        Model model = ModelUtil.load("SimulationAssistantModel", args[0]);
+        StringBuilder errors = new StringBuilder();
+        try {
+            for (int index = 1; index < args.length; index += 2) {
+                String plotTag = args[index];
+                String outputPath = args[index + 1];
+                String exportTag = "simulationAssistantImage" + ((index - 1) / 2);
+                try {
+                    model.result().export().create(exportTag, plotTag, "Image");
+                    model.result().export(exportTag).set("imagetype", "png");
+                    model.result().export(exportTag).set("pngfilename", outputPath);
+                    model.result().export(exportTag).run();
+                } catch (Exception error) {
+                    String message = String.valueOf(error.getMessage())
+                        .replace('\t', ' ').replace('\r', ' ').replace('\n', ' ');
+                    errors.append("SIMULATION_ASSISTANT_PLOT_ERROR\t")
+                        .append(plotTag).append('\t').append(message).append('\n');
+                }
+            }
+        } finally {
+            ModelUtil.remove("SimulationAssistantModel");
+        }
+        if (errors.length() > 0) {
+            throw new RuntimeException(errors.toString());
+        }
+    }
+}
+"""
 
 
 @dataclass(frozen=True)
@@ -186,6 +226,24 @@ class ComsolAdapter(SimulationAdapter):
         metrics["output_model_bytes"] = float(output_model.stat().st_size)
         series = _first_series(tables) if tables_are_fresh else []
         output_info = inspect_mph(output_model)
+        try:
+            plot_export_metadata = _export_selected_plots(
+                config,
+                output_model=output_model,
+                selected_plots=selected_plots,
+                work_dir=work_dir,
+                process_runner=self.process_runner,
+            )
+        except OSError as exc:
+            plot_export_metadata = {
+                "plot_export_status": "failed",
+                "plot_exports": [],
+                "plot_export_errors": {
+                    plot["tag"]: f"Unable to prepare COMSOL plot artifacts: {exc}"
+                    for plot in selected_plots
+                },
+                "plot_export_log": None,
+            }
         return SimulationResult(
             metrics=metrics,
             series=series,
@@ -204,6 +262,7 @@ class ComsolAdapter(SimulationAdapter):
                 "batch_log": str(batch_log.resolve()),
                 "tables": tables,
                 "selected_plot_groups": selected_plots,
+                **plot_export_metadata,
                 "table_results_status": (
                     "fresh_by_job_contract"
                     if tables_are_fresh
@@ -376,6 +435,204 @@ def validate_plot_selection(
             f"Plot group(s) not found: {', '.join(missing)}; available: {available_text}"
         )
     return [dict(available[tag]) for tag in tags]
+
+
+def _export_selected_plots(
+    config: ComsolConfig,
+    *,
+    output_model: Path,
+    selected_plots: list[dict[str, str]],
+    work_dir: Path,
+    process_runner: ProcessRunner,
+) -> dict[str, Any]:
+    if not selected_plots:
+        return {
+            "plot_export_status": "not_requested",
+            "plot_exports": [],
+            "plot_export_errors": {},
+            "plot_export_log": None,
+        }
+
+    plot_dir = work_dir / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    export_log = work_dir / "plot-export.log"
+    support_dir = work_dir / ".plot-export"
+    support_dir.mkdir(parents=True, exist_ok=True)
+    source_path = support_dir / f"{PLOT_EXPORTER_CLASS}.java"
+    class_path = support_dir / f"{PLOT_EXPORTER_CLASS}.class"
+    source_path.write_text(PLOT_EXPORTER_SOURCE, encoding="utf-8", newline="\n")
+
+    requested: list[tuple[dict[str, str], Path]] = []
+    for plot in selected_plots:
+        filename = _plot_filename(plot)
+        requested.append((plot, plot_dir / filename))
+
+    compiler = _find_comsol_compiler(config.executable)
+    if compiler is None:
+        return _failed_plot_exports(
+            requested,
+            "COMSOL Java compiler was not found beside the batch executable",
+            export_log,
+        )
+
+    try:
+        compiled = process_runner(
+            [str(compiler.resolve()), str(source_path.resolve())],
+            cwd=support_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return _failed_plot_exports(
+            requested,
+            f"COMSOL plot exporter compilation failed: {exc}",
+            export_log,
+        )
+    if compiled.returncode != 0 or not class_path.is_file():
+        details = (compiled.stderr or compiled.stdout).strip()
+        message = "COMSOL plot exporter compilation failed"
+        if details:
+            message += f": {details[-500:]}"
+        return _failed_plot_exports(requested, message, export_log)
+
+    command = [
+        str(config.executable.resolve()),
+        "-3drend",
+        "sw",
+        "-graphics",
+        "-inputfile",
+        str(class_path.resolve()),
+        "-batchlog",
+        str(export_log.resolve()),
+        "-nosave",
+        "-prodargs",
+        str(output_model.resolve()),
+    ]
+    for plot, output_path in requested:
+        command.extend([plot["tag"], str(output_path.resolve())])
+
+    try:
+        completed = process_runner(
+            command,
+            cwd=support_dir,
+            capture_output=True,
+            text=True,
+            timeout=config.timeout_seconds + 60,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return _failed_plot_exports(
+            requested,
+            f"COMSOL plot export failed: {exc}",
+            export_log,
+        )
+
+    reported_errors = _read_plot_export_errors(
+        export_log,
+        completed.stdout,
+        completed.stderr,
+    )
+    fallback_error = _log_tail(export_log) or completed.stderr.strip()
+    exports: list[dict[str, Any]] = []
+    errors: dict[str, str] = {}
+    for plot, output_path in requested:
+        tag = plot["tag"]
+        if _is_png(output_path):
+            exports.append(
+                {
+                    "tag": tag,
+                    "label": plot.get("label", tag),
+                    "dimension": plot.get("dimension", ""),
+                    "filename": output_path.name,
+                    "path": str(output_path.resolve()),
+                    "bytes": output_path.stat().st_size,
+                }
+            )
+            continue
+        error = reported_errors.get(tag)
+        if not error and completed.returncode != 0:
+            error = fallback_error or (
+                f"COMSOL plot process exited with code {completed.returncode}"
+            )
+        errors[tag] = error or "COMSOL did not create a valid PNG image"
+
+    if exports and errors:
+        status = "partial"
+    elif exports:
+        status = "succeeded"
+    else:
+        status = "failed"
+    return {
+        "plot_export_status": status,
+        "plot_exports": exports,
+        "plot_export_errors": errors,
+        "plot_export_log": (
+            str(export_log.resolve()) if export_log.is_file() else None
+        ),
+    }
+
+
+def _find_comsol_compiler(executable: Path) -> Path | None:
+    candidate = executable.with_name(f"comsolcompile{executable.suffix}")
+    if candidate.is_file():
+        return candidate
+    match = shutil.which(candidate.name) or shutil.which("comsolcompile")
+    return Path(match) if match else None
+
+
+def _plot_filename(plot: dict[str, str]) -> str:
+    label = str(plot.get("label") or plot["tag"])
+    slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:64]
+    return f"{plot['tag']}-{slug or 'plot'}.png"
+
+
+def _is_png(path: Path) -> bool:
+    try:
+        with path.open("rb") as image:
+            return image.read(len(PNG_SIGNATURE)) == PNG_SIGNATURE
+    except OSError:
+        return False
+
+
+def _read_plot_export_errors(
+    export_log: Path,
+    *process_output: str,
+) -> dict[str, str]:
+    try:
+        log_text = export_log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        log_text = ""
+    lines = log_text.splitlines()
+    for output in process_output:
+        lines.extend((output or "").splitlines())
+    errors: dict[str, str] = {}
+    marker = "SIMULATION_ASSISTANT_PLOT_ERROR\t"
+    for line in lines:
+        if marker not in line:
+            continue
+        parts = line.split(marker, 1)[1].split("\t", 1)
+        if parts:
+            errors[parts[0]] = (
+                parts[1] if len(parts) == 2 else "COMSOL image export failed"
+            )
+    return errors
+
+
+def _failed_plot_exports(
+    requested: list[tuple[dict[str, str], Path]],
+    message: str,
+    export_log: Path,
+) -> dict[str, Any]:
+    return {
+        "plot_export_status": "failed",
+        "plot_exports": [],
+        "plot_export_errors": {plot["tag"]: message for plot, _ in requested},
+        "plot_export_log": (
+            str(export_log.resolve()) if export_log.is_file() else None
+        ),
+    }
 
 
 def _validate_plot_tag_syntax(selected_tags: tuple[str, ...] | list[str]) -> list[str]:

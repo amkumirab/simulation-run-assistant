@@ -32,7 +32,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
   targeted execution, monitoring, details, and retries
 - Native desktop assistant with no browser or local web server requirement
 - Local workspace profiles for recent models, COMSOL targets, formulas, and sweep presets
-- COMSOL Plot Group discovery and validated multi-plot selection in native profiles
+- COMSOL Plot Group discovery, validated selection, and automatic PNG artifacts
 - Native parameter-sweep builder with Cartesian preview, sequential execution,
   and runtime estimates based on recent COMSOL runs
 - Safe custom output formulas and comparison across successful simulation states
@@ -121,9 +121,9 @@ restored when the desktop app starts. Select **Duplicate** to create a variant o
 **Delete** to remove only the local profile without affecting simulation results.
 After a connection check, the workspace also lists the model's saved 1D, 2D,
 and 3D Plot Groups. Select up to 12 plot tags to preserve the intended visual
-outputs in the profile. Image export and the Results viewer are planned as the
-next Plot Explorer increments; this release establishes the inspected and
-validated model contract they use.
+outputs in the profile. Each selected plot is exported as a PNG after a
+successful solve and stored in that job's `plots` artifact directory. Export
+status and individual plot errors appear in the native job-details window.
 
 Profiles are stored in `.sim-assistant/profiles.json`, which is excluded by the
 repository's `.gitignore`. **Export template** creates a shareable JSON template
@@ -276,7 +276,7 @@ The repository intentionally leaves useful, portfolio-worthy increments for
 future commits:
 
 - COMSOL result-export contracts for additional model families
-- PNG export for selected COMSOL Plot Groups and a native Results viewer
+- Native image viewer for exported COMSOL Plot Groups
 - Attach result plots to Telegram messages
 - Parallel workers with configurable license-seat limits
 - Stop/cancel controls and stale-running-job recovery
