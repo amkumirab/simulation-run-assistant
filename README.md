@@ -32,7 +32,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
   targeted execution, monitoring, details, and retries
 - Native desktop assistant with no browser or local web server requirement
 - Local workspace profiles for recent models, COMSOL targets, formulas, and sweep presets
-- COMSOL Plot Group discovery, validated selection, and automatic PNG artifacts
+- COMSOL Plot Group discovery, PNG export, and a native visual Results viewer
 - Native parameter-sweep builder with Cartesian preview, sequential execution,
   and runtime estimates based on recent COMSOL runs
 - Safe custom output formulas and comparison across successful simulation states
@@ -124,6 +124,9 @@ and 3D Plot Groups. Select up to 12 plot tags to preserve the intended visual
 outputs in the profile. Each selected plot is exported as a PNG after a
 successful solve and stored in that job's `plots` artifact directory. Export
 status and individual plot errors appear in the native job-details window.
+Double-click a completed queue row and open **Results** to browse the images,
+move between Plot Groups, inspect dimensions and file sizes, or open the original
+PNG in the system image viewer. No browser or local server is involved.
 
 Profiles are stored in `.sim-assistant/profiles.json`, which is excluded by the
 repository's `.gitignore`. **Export template** creates a shareable JSON template
@@ -276,7 +279,7 @@ The repository intentionally leaves useful, portfolio-worthy increments for
 future commits:
 
 - COMSOL result-export contracts for additional model families
-- Native image viewer for exported COMSOL Plot Groups
+- Side-by-side plot comparison across parameter-sweep states
 - Attach result plots to Telegram messages
 - Parallel workers with configurable license-seat limits
 - Stop/cancel controls and stale-running-job recovery
@@ -294,6 +297,7 @@ src/simulation_assistant/
 |-- formulas.py     # Safe computed-output expression engine
 |-- manifest.py     # JSON validation and sweep expansion
 |-- notifications.py
+|-- plot_artifacts.py # Safe plot lookup and native preview helpers
 |-- profiles.py     # Local workspace profiles and sanitized template export
 |-- telegram_api.py # Minimal Telegram Bot API client
 |-- telegram_bot.py # Authorized long-polling command bot

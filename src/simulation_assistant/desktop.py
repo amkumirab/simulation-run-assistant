@@ -20,6 +20,11 @@ from simulation_assistant.formulas import (
     validate_output_formulas,
 )
 from simulation_assistant.notifications import notifier_from_environment
+from simulation_assistant.plot_artifacts import (
+    format_file_size,
+    preview_subsample_factor,
+    resolve_plot_artifact,
+)
 from simulation_assistant.profiles import (
     ProfileStore,
     WorkspaceProfile,
@@ -1677,7 +1682,8 @@ class DesktopApp:
     def _show_job(self, job: Job) -> None:
         window = tk.Toplevel(self.root)
         window.title(f"Job #{job.id} details")
-        window.geometry("760x620")
+        window.geometry("980x720")
+        window.minsize(820, 620)
         window.configure(background=COLORS["canvas"])
         container = ttk.Frame(window, style="Card.TFrame", padding=22)
         container.pack(fill="both", expand=True, padx=18, pady=18)
@@ -1695,13 +1701,20 @@ class DesktopApp:
         notebook = ttk.Notebook(container)
         notebook.pack(fill="both", expand=True)
         metadata = (job.result or {}).get("metadata", {})
+        plot_exports = [
+            item
+            for item in metadata.get("plot_exports", [])
+            if isinstance(item, dict)
+        ]
         plot_values = {"status": metadata.get("plot_export_status", "not_requested")}
         plot_values.update(
             {
                 str(item.get("tag", "plot")): item.get("filename", "")
-                for item in metadata.get("plot_exports", [])
+                for item in plot_exports
             }
         )
+        if plot_exports:
+            self._add_plot_viewer(notebook, job, plot_exports)
         for title, values in (
             ("Inputs", job.parameters),
             ("Formulas", job.output_formulas),
@@ -1746,6 +1759,157 @@ class DesktopApp:
             style="Primary.TButton",
             command=window.destroy,
         ).pack(side="right")
+
+    def _add_plot_viewer(
+        self,
+        notebook: ttk.Notebook,
+        job: Job,
+        plots: list[dict[str, Any]],
+    ) -> None:
+        frame = ttk.Frame(notebook, style="Card.TFrame", padding=12)
+        notebook.add(frame, text=f"Results ({len(plots)})")
+        frame.grid_columnconfigure(1, weight=1)
+        frame.grid_rowconfigure(0, weight=1)
+
+        browser = tk.Frame(
+            frame,
+            background=COLORS["soft"],
+            highlightbackground=COLORS["line"],
+            highlightthickness=1,
+            padx=10,
+            pady=10,
+        )
+        browser.grid(row=0, column=0, sticky="ns", padx=(0, 12))
+        ttk.Label(browser, text="PLOT GROUPS", style="Field.TLabel").pack(anchor="w")
+        plot_list = tk.Listbox(
+            browser,
+            width=31,
+            height=18,
+            background=COLORS["surface"],
+            foreground=COLORS["ink"],
+            selectbackground=COLORS["blue"],
+            selectforeground="#ffffff",
+            highlightbackground=COLORS["line"],
+            highlightthickness=1,
+            borderwidth=0,
+            activestyle="none",
+            font=("Segoe UI", 9),
+        )
+        plot_list.pack(fill="y", expand=True, pady=(8, 0))
+        for plot in plots:
+            tag = str(plot.get("tag") or "plot")
+            label = str(plot.get("label") or tag)
+            dimension = str(plot.get("dimension") or "plot")
+            plot_list.insert(tk.END, f"{tag}  ·  {dimension}  ·  {label}")
+
+        preview_panel = ttk.Frame(frame, style="Card.TFrame")
+        preview_panel.grid(row=0, column=1, sticky="nsew")
+        preview_panel.grid_columnconfigure(0, weight=1)
+        preview_panel.grid_rowconfigure(0, weight=1)
+        image_label = tk.Label(
+            preview_panel,
+            text="Select a plot to preview its PNG artifact.",
+            background=COLORS["soft"],
+            foreground=COLORS["muted"],
+            highlightbackground=COLORS["line"],
+            highlightthickness=1,
+            anchor="center",
+            font=("Segoe UI", 10),
+        )
+        image_label.grid(row=0, column=0, sticky="nsew")
+
+        info_var = tk.StringVar(value="")
+        ttk.Label(
+            preview_panel,
+            textvariable=info_var,
+            style="CardText.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(9, 0))
+
+        controls = ttk.Frame(preview_panel, style="Card.TFrame")
+        controls.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        state: dict[str, Any] = {"path": None, "source": None, "preview": None}
+
+        def show_plot(index: int) -> None:
+            plot_list.selection_clear(0, tk.END)
+            plot_list.selection_set(index)
+            plot_list.activate(index)
+            plot_list.see(index)
+            plot = plots[index]
+            try:
+                path = resolve_plot_artifact(job.artifact_dir, plot)
+                source = tk.PhotoImage(file=str(path))
+            except (ValueError, tk.TclError) as exc:
+                state.update(path=None, source=None, preview=None)
+                image_label.configure(
+                    image="",
+                    text=f"Preview unavailable\n\n{exc}",
+                    foreground=COLORS["red"],
+                )
+                image_label.image = None  # type: ignore[attr-defined]
+                info_var.set(f"{index + 1} of {len(plots)}")
+                open_button.configure(state="disabled")
+                return
+
+            factor = preview_subsample_factor(source.width(), source.height())
+            preview = source if factor == 1 else source.subsample(factor, factor)
+            state.update(path=path, source=source, preview=preview)
+            image_label.configure(image=preview, text="", foreground=COLORS["muted"])
+            image_label.image = preview  # type: ignore[attr-defined]
+            label = str(plot.get("label") or plot.get("tag") or "Plot")
+            dimension = str(plot.get("dimension") or "plot")
+            info_var.set(
+                f"{index + 1} of {len(plots)}  ·  {label}  ·  {dimension}  ·  "
+                f"{source.width()} × {source.height()}  ·  "
+                f"{format_file_size(path.stat().st_size)}"
+            )
+            open_button.configure(state="normal")
+
+        def selected_index() -> int:
+            selection = plot_list.curselection()
+            return int(selection[0]) if selection else 0
+
+        def move_plot(offset: int) -> None:
+            target = max(0, min(len(plots) - 1, selected_index() + offset))
+            show_plot(target)
+
+        ttk.Button(
+            controls,
+            text="Previous",
+            style="Secondary.TButton",
+            command=lambda: move_plot(-1),
+        ).pack(side="left")
+        ttk.Button(
+            controls,
+            text="Next",
+            style="Secondary.TButton",
+            command=lambda: move_plot(1),
+        ).pack(side="left", padx=(8, 0))
+        open_button = ttk.Button(
+            controls,
+            text="Open PNG",
+            style="Primary.TButton",
+            state="disabled",
+            command=lambda: self._open_plot_artifact(state.get("path")),
+        )
+        open_button.pack(side="right")
+        plot_list.bind(
+            "<<ListboxSelect>>",
+            lambda _event: show_plot(selected_index()),
+        )
+        show_plot(0)
+
+    def _open_plot_artifact(self, path: Path | None) -> None:
+        if path is None or not path.is_file():
+            messagebox.showerror(
+                "Plot artifact",
+                "The selected PNG artifact is no longer available.",
+                parent=self.root,
+            )
+            return
+        try:
+            os.startfile(path)  # type: ignore[attr-defined]
+        except OSError as exc:
+            messagebox.showerror("Plot artifact", str(exc), parent=self.root)
 
     def _open_artifacts(self, path: str) -> None:
         resolved = Path(path).resolve()

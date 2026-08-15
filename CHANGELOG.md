@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.9.0] - 2026-08-15
+
+### Added
+
+- Native Results tab for previewing exported COMSOL PNG artifacts
+- Plot list with Previous and Next navigation and original-file access
+- Automatic preview scaling using built-in Tk image support
+- Relocation-aware artifact lookup using stable exported filenames
+- Tests for artifact confinement, missing files, preview scaling, and size labels
+
+### Changed
+
+- Job details now open in a larger resizable window for simulation images
+- Plot previews are restricted to PNG files inside the selected job directory
+- Package version increased to 0.9.0
+
 ## [0.8.0] - 2026-08-14
 
 ### Added

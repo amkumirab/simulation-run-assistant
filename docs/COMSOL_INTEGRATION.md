@@ -156,6 +156,19 @@ The exporter uses COMSOL software rendering and therefore does not require an
 open COMSOL Desktop window. It does require `comsolcompile` beside the configured
 batch executable; this compiler is included with a standard COMSOL installation.
 
+### Native Results viewer
+
+Double-click a completed job in the run queue and select the **Results** tab to
+preview its exported Plot Groups inside the desktop application. The viewer uses
+Tk's built-in PNG support, scales large images to the available preview area,
+and provides Previous, Next, and Open PNG actions. The caption reports the Plot
+Group label, dimension, original image dimensions, and artifact size.
+
+The viewer resolves images from the current job's `plots` directory by stable
+filename, so an artifact directory can be moved with its database record updated.
+Recorded paths outside that job directory, non-PNG files, and path traversal are
+rejected before an image is loaded or opened.
+
 Supported formula operations are `+`, `-`, `*`, `/`, `%`, and `**`. Supported
 functions include `abs`, `sqrt`, `log`, `log10`, `exp`, `sin`, `cos`, `tan`,
 `min`, and `max`; constants `pi` and `e` are also available. Formulas are parsed
@@ -261,6 +274,8 @@ contract are included in metrics and plots.
   marks only that queue job as failed.
 - A plot compilation or image-export error is recorded per selected Plot Group
   but does not discard a successfully solved model or its numerical results.
+- A missing or moved PNG is reported only in the native preview; it does not
+  change the stored simulation status.
 - The final COMSOL log lines are included in the stored job error for diagnosis.
 - Telegram notification failures never alter the COMSOL job status.
 
