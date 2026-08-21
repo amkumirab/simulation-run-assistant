@@ -4,9 +4,12 @@ from pathlib import Path
 
 from simulation_assistant.plot_artifacts import (
     format_file_size,
+    matching_plot_artifacts,
+    parameter_summary,
     preview_subsample_factor,
     resolve_plot_artifact,
 )
+from simulation_assistant.types import Job, JobStatus
 
 
 class PlotArtifactTests(unittest.TestCase):
@@ -75,6 +78,109 @@ class PlotArtifactTests(unittest.TestCase):
         self.assertEqual(format_file_size(2048), "2.0 KB")
         self.assertEqual(format_file_size(2 * 1024 * 1024), "2.0 MB")
         self.assertEqual(format_file_size(None), "size unavailable")
+
+    def test_finds_matching_plots_from_successful_jobs_in_the_same_batch(self) -> None:
+        jobs = [
+            self._job(3, batch="sweep-a", status=JobStatus.FAILED),
+            self._job(1, batch="sweep-a"),
+            self._job(4, batch="sweep-a"),
+            self._job(2, batch="sweep-b"),
+            self._job(5, batch="sweep-a", plot_tag="pg2"),
+        ]
+
+        matches = matching_plot_artifacts(
+            jobs,
+            batch_name="sweep-a",
+            plot_tag="pg1",
+        )
+
+        self.assertEqual([item.job.id for item in matches], [1, 4])
+        self.assertTrue(all(item.path.is_file() for item in matches))
+
+    def test_comparison_keeps_the_most_recent_jobs_within_its_limit(self) -> None:
+        jobs = [self._job(job_id, batch="sweep-a") for job_id in range(1, 5)]
+
+        matches = matching_plot_artifacts(
+            jobs,
+            batch_name="sweep-a",
+            plot_tag="pg1",
+            limit=2,
+        )
+
+        self.assertEqual([item.job.id for item in matches], [3, 4])
+
+        with_original = matching_plot_artifacts(
+            jobs,
+            batch_name="sweep-a",
+            plot_tag="pg1",
+            limit=2,
+            include_job_id=1,
+        )
+        self.assertEqual([item.job.id for item in with_original], [1, 4])
+
+    def test_ignores_missing_plot_artifacts_during_comparison(self) -> None:
+        valid = self._job(1, batch="sweep-a")
+        missing = self._job(2, batch="sweep-a", create_image=False)
+
+        matches = matching_plot_artifacts(
+            [missing, valid],
+            batch_name="sweep-a",
+            plot_tag="pg1",
+        )
+
+        self.assertEqual([item.job.id for item in matches], [1])
+
+    def test_formats_a_bounded_parameter_summary(self) -> None:
+        summary = parameter_summary(
+            {"frequency": "85[kHz]", "gap": "15[cm]", "turns": 10},
+            limit=2,
+        )
+
+        self.assertEqual(summary, "frequency=85[kHz]  ·  gap=15[cm]  ·  +1 more")
+        self.assertEqual(parameter_summary({}), "No recorded parameters")
+
+    def _job(
+        self,
+        job_id: int,
+        *,
+        batch: str,
+        status: JobStatus = JobStatus.SUCCEEDED,
+        plot_tag: str = "pg1",
+        create_image: bool = True,
+    ) -> Job:
+        artifact_dir = self.root / f"job-{job_id}-{batch}-{plot_tag}"
+        plot_dir = artifact_dir / "plots"
+        plot_dir.mkdir(parents=True)
+        filename = f"{plot_tag}-field.png"
+        if create_image:
+            (plot_dir / filename).write_bytes(b"\x89PNG\r\n\x1a\nimage")
+        return Job(
+            id=job_id,
+            batch_name=batch,
+            adapter="comsol",
+            status=status,
+            parameters={"frequency": f"{80 + job_id}[kHz]"},
+            output_formulas={},
+            result={
+                "metrics": {},
+                "metadata": {
+                    "plot_exports": [
+                        {
+                            "tag": plot_tag,
+                            "label": "Magnetic Flux Density",
+                            "dimension": "2D",
+                            "filename": filename,
+                        }
+                    ]
+                },
+            },
+            error=None,
+            artifact_dir=str(artifact_dir),
+            attempts=1,
+            created_at=f"2026-08-{job_id:02d}T00:00:00+00:00",
+            started_at=None,
+            finished_at=None,
+        )
 
 
 if __name__ == "__main__":
