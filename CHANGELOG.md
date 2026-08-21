@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.10.0] - 2026-08-21
+
+### Added
+
+- Side-by-side Plot Group comparison across successful jobs in the same batch
+- Horizontally scrollable comparison cards with job parameters and file sizes
+- Current-job highlighting and direct access to each original PNG artifact
+- Matching by stable COMSOL Plot Group tag across parameter-sweep states
+- Tests for batch filtering, success filtering, missing files, ordering, and limits
+
+### Changed
+
+- Native Results previews now provide a Compare runs action
+- Comparisons retain the selected job while limiting image memory to 12 states
+- Package version increased to 0.10.0
+
 ## [0.9.0] - 2026-08-15
 
 ### Added

@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
+
+from simulation_assistant.types import Job, JobStatus
 
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+@dataclass(frozen=True)
+class PlotComparisonArtifact:
+    job: Job
+    plot: dict[str, Any]
+    path: Path
 
 
 def resolve_plot_artifact(
@@ -63,6 +73,76 @@ def preview_subsample_factor(
     width_factor = (width + max_width - 1) // max_width
     height_factor = (height + max_height - 1) // max_height
     return max(1, width_factor, height_factor)
+
+
+def matching_plot_artifacts(
+    jobs: Iterable[Job],
+    *,
+    batch_name: str,
+    plot_tag: str,
+    limit: int = 12,
+    include_job_id: int | None = None,
+) -> list[PlotComparisonArtifact]:
+    """Find valid matching Plot Group images from successful jobs in one batch."""
+    if not plot_tag:
+        raise ValueError("Plot tag is required")
+    if limit < 2:
+        raise ValueError("Plot comparison limit must be at least two")
+
+    matches: list[PlotComparisonArtifact] = []
+    for job in jobs:
+        if job.status != JobStatus.SUCCEEDED or job.batch_name != batch_name:
+            continue
+        metadata = (job.result or {}).get("metadata", {})
+        exports = metadata.get("plot_exports", [])
+        if not isinstance(exports, list):
+            continue
+        plot = next(
+            (
+                item
+                for item in exports
+                if isinstance(item, dict) and str(item.get("tag") or "") == plot_tag
+            ),
+            None,
+        )
+        if plot is None:
+            continue
+        try:
+            path = resolve_plot_artifact(job.artifact_dir, plot)
+        except ValueError:
+            continue
+        matches.append(
+            PlotComparisonArtifact(
+                job=job,
+                plot=dict(plot),
+                path=path,
+            )
+        )
+    matches.sort(key=lambda item: item.job.id)
+    selected = matches[-limit:]
+    if include_job_id is None or any(
+        item.job.id == include_job_id for item in selected
+    ):
+        return selected
+    included = next(
+        (item for item in matches if item.job.id == include_job_id),
+        None,
+    )
+    if included is None:
+        return selected
+    return sorted([included, *selected[1:]], key=lambda item: item.job.id)
+
+
+def parameter_summary(parameters: Mapping[str, Any], limit: int = 4) -> str:
+    if limit < 1:
+        raise ValueError("Parameter summary limit must be positive")
+    items = sorted((str(name), str(value)) for name, value in parameters.items())
+    visible = items[:limit]
+    summary = "  ·  ".join(f"{name}={value}" for name, value in visible)
+    remaining = len(items) - len(visible)
+    if remaining:
+        summary += f"  ·  +{remaining} more"
+    return summary or "No recorded parameters"
 
 
 def format_file_size(byte_count: Any) -> str:

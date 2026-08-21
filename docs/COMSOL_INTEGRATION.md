@@ -169,6 +169,19 @@ filename, so an artifact directory can be moved with its database record updated
 Recorded paths outside that job directory, non-PNG files, and path traversal are
 rejected before an image is loaded or opened.
 
+### Comparing sweep plots
+
+Select a Plot Group in the native **Results** tab and choose **Compare runs**.
+The application finds successful jobs with the same batch name and COMSOL Plot
+Group tag, then displays their PNG artifacts side by side in job-number order.
+Each card includes the recorded parameter state, artifact size, an Open PNG
+action, and a marker for the job where the comparison was opened.
+
+The gallery loads no more than 12 states at once to bound image memory. It keeps
+the selected job in the gallery even when that job is older than the most recent
+12 results. Failed jobs, other batches, unmatched Plot Group tags, missing PNGs,
+and files outside their job artifact directories are excluded automatically.
+
 Supported formula operations are `+`, `-`, `*`, `/`, `%`, and `**`. Supported
 functions include `abs`, `sqrt`, `log`, `log10`, `exp`, `sin`, `cos`, `tan`,
 `min`, and `max`; constants `pi` and `e` are also available. Formulas are parsed

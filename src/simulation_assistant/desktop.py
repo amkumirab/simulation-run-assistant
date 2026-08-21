@@ -22,6 +22,8 @@ from simulation_assistant.formulas import (
 from simulation_assistant.notifications import notifier_from_environment
 from simulation_assistant.plot_artifacts import (
     format_file_size,
+    matching_plot_artifacts,
+    parameter_summary,
     preview_subsample_factor,
     resolve_plot_artifact,
 )
@@ -1827,7 +1829,12 @@ class DesktopApp:
 
         controls = ttk.Frame(preview_panel, style="Card.TFrame")
         controls.grid(row=2, column=0, sticky="ew", pady=(10, 0))
-        state: dict[str, Any] = {"path": None, "source": None, "preview": None}
+        state: dict[str, Any] = {
+            "path": None,
+            "plot": None,
+            "source": None,
+            "preview": None,
+        }
 
         def show_plot(index: int) -> None:
             plot_list.selection_clear(0, tk.END)
@@ -1839,7 +1846,7 @@ class DesktopApp:
                 path = resolve_plot_artifact(job.artifact_dir, plot)
                 source = tk.PhotoImage(file=str(path))
             except (ValueError, tk.TclError) as exc:
-                state.update(path=None, source=None, preview=None)
+                state.update(path=None, plot=None, source=None, preview=None)
                 image_label.configure(
                     image="",
                     text=f"Preview unavailable\n\n{exc}",
@@ -1848,11 +1855,12 @@ class DesktopApp:
                 image_label.image = None  # type: ignore[attr-defined]
                 info_var.set(f"{index + 1} of {len(plots)}")
                 open_button.configure(state="disabled")
+                compare_button.configure(state="disabled")
                 return
 
             factor = preview_subsample_factor(source.width(), source.height())
             preview = source if factor == 1 else source.subsample(factor, factor)
-            state.update(path=path, source=source, preview=preview)
+            state.update(path=path, plot=plot, source=source, preview=preview)
             image_label.configure(image=preview, text="", foreground=COLORS["muted"])
             image_label.image = preview  # type: ignore[attr-defined]
             label = str(plot.get("label") or plot.get("tag") or "Plot")
@@ -1863,6 +1871,7 @@ class DesktopApp:
                 f"{format_file_size(path.stat().st_size)}"
             )
             open_button.configure(state="normal")
+            compare_button.configure(state="normal")
 
         def selected_index() -> int:
             selection = plot_list.curselection()
@@ -1892,11 +1901,200 @@ class DesktopApp:
             command=lambda: self._open_plot_artifact(state.get("path")),
         )
         open_button.pack(side="right")
+        compare_button = ttk.Button(
+            controls,
+            text="Compare runs",
+            style="Secondary.TButton",
+            state="disabled",
+            command=lambda: self._show_plot_comparison(job, state.get("plot")),
+        )
+        compare_button.pack(side="right", padx=(0, 8))
         plot_list.bind(
             "<<ListboxSelect>>",
             lambda _event: show_plot(selected_index()),
         )
         show_plot(0)
+
+    def _show_plot_comparison(
+        self,
+        current_job: Job,
+        plot: dict[str, Any] | None,
+    ) -> None:
+        if not plot or not plot.get("tag"):
+            messagebox.showinfo(
+                "Compare runs",
+                "Select an available Plot Group first.",
+                parent=self.root,
+            )
+            return
+        tag = str(plot["tag"])
+        successful_jobs = self.store.list(status=JobStatus.SUCCEEDED, limit=500)
+        comparisons = matching_plot_artifacts(
+            successful_jobs,
+            batch_name=current_job.batch_name,
+            plot_tag=tag,
+            limit=12,
+            include_job_id=current_job.id,
+        )
+        if len(comparisons) < 2:
+            messagebox.showinfo(
+                "Compare runs",
+                "At least two successful jobs in this batch need the same Plot Group.",
+                parent=self.root,
+            )
+            return
+
+        label = str(plot.get("label") or tag)
+        window = tk.Toplevel(self.root)
+        window.title(f"Compare {tag} across runs")
+        window.geometry("1220x650")
+        window.minsize(860, 560)
+        window.configure(background=COLORS["canvas"])
+
+        container = ttk.Frame(window, style="Card.TFrame", padding=20)
+        container.pack(fill="both", expand=True, padx=18, pady=18)
+        ttk.Label(
+            container,
+            text=f"{label} · {tag}",
+            style="CardTitle.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            container,
+            text=(
+                f"{len(comparisons)} successful states from "
+                f"'{current_job.batch_name}' · ordered by job number"
+            ),
+            style="CardText.TLabel",
+        ).pack(anchor="w", pady=(4, 14))
+
+        gallery = ttk.Frame(container, style="Card.TFrame")
+        gallery.pack(fill="both", expand=True)
+        canvas = tk.Canvas(
+            gallery,
+            background=COLORS["surface"],
+            highlightthickness=0,
+            height=470,
+        )
+        scrollbar = ttk.Scrollbar(gallery, orient="horizontal", command=canvas.xview)
+        cards = tk.Frame(canvas, background=COLORS["surface"])
+        canvas_window = canvas.create_window((0, 0), window=cards, anchor="nw")
+        canvas.configure(xscrollcommand=scrollbar.set)
+        canvas.pack(fill="both", expand=True)
+        scrollbar.pack(fill="x", pady=(8, 0))
+        cards.bind(
+            "<Configure>",
+            lambda _event: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda event: canvas.itemconfigure(canvas_window, height=event.height),
+        )
+
+        image_references: list[tk.PhotoImage] = []
+        for column, comparison in enumerate(comparisons):
+            card = tk.Frame(
+                cards,
+                width=370,
+                height=450,
+                background=COLORS["soft"],
+                highlightbackground=(
+                    COLORS["blue"]
+                    if comparison.job.id == current_job.id
+                    else COLORS["line"]
+                ),
+                highlightthickness=(
+                    2 if comparison.job.id == current_job.id else 1
+                ),
+                padx=12,
+                pady=12,
+            )
+            card.grid(row=0, column=column, sticky="ns", padx=(0, 12))
+            card.pack_propagate(False)
+
+            heading = tk.Frame(card, background=COLORS["soft"])
+            heading.pack(fill="x")
+            tk.Label(
+                heading,
+                text=f"Job #{comparison.job.id}",
+                background=COLORS["soft"],
+                foreground=COLORS["ink"],
+                font=("Segoe UI Semibold", 11),
+            ).pack(side="left")
+            if comparison.job.id == current_job.id:
+                tk.Label(
+                    heading,
+                    text="CURRENT",
+                    background=COLORS["blue_soft"],
+                    foreground=COLORS["blue"],
+                    font=("Segoe UI Semibold", 8),
+                    padx=7,
+                    pady=2,
+                ).pack(side="right")
+
+            try:
+                source = tk.PhotoImage(file=str(comparison.path))
+            except tk.TclError as exc:
+                tk.Label(
+                    card,
+                    text=f"Preview unavailable\n\n{exc}",
+                    background=COLORS["surface"],
+                    foreground=COLORS["red"],
+                    highlightbackground=COLORS["line"],
+                    highlightthickness=1,
+                    wraplength=320,
+                ).pack(fill="both", expand=True, pady=(10, 9))
+            else:
+                factor = preview_subsample_factor(
+                    source.width(),
+                    source.height(),
+                    max_width=338,
+                    max_height=285,
+                )
+                preview = (
+                    source if factor == 1 else source.subsample(factor, factor)
+                )
+                image_references.extend([source, preview])
+                tk.Label(
+                    card,
+                    image=preview,
+                    background=COLORS["surface"],
+                    highlightbackground=COLORS["line"],
+                    highlightthickness=1,
+                ).pack(fill="both", expand=True, pady=(10, 9))
+
+            tk.Label(
+                card,
+                text=parameter_summary(comparison.job.parameters),
+                background=COLORS["soft"],
+                foreground=COLORS["ink"],
+                font=("Segoe UI", 9),
+                justify="left",
+                anchor="w",
+                wraplength=338,
+            ).pack(fill="x")
+            footer = tk.Frame(card, background=COLORS["soft"])
+            footer.pack(fill="x", pady=(8, 0))
+            tk.Label(
+                footer,
+                text=format_file_size(comparison.path.stat().st_size),
+                background=COLORS["soft"],
+                foreground=COLORS["muted"],
+                font=("Segoe UI", 8),
+            ).pack(side="left")
+            ttk.Button(
+                footer,
+                text="Open PNG",
+                style="Secondary.TButton",
+                command=lambda path=comparison.path: self._open_plot_artifact(path),
+            ).pack(side="right")
+
+        window.plot_images = image_references  # type: ignore[attr-defined]
+        ttk.Button(
+            container,
+            text="Close",
+            style="Primary.TButton",
+            command=window.destroy,
+        ).pack(anchor="e", pady=(12, 0))
 
     def _open_plot_artifact(self, path: Path | None) -> None:
         if path is None or not path.is_file():
