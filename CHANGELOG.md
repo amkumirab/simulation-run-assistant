@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.11.0] - 2026-08-22
+
+### Added
+
+- Self-contained HTML export for native Plot Group comparison galleries
+- Embedded PNG data URIs with complete parameter tables for every job state
+- Responsive screen layout and print-friendly two-column report styling
+- Export report action with save-location selection and optional immediate open
+- Tests for portable image embedding, HTML escaping, path privacy, and validation
+
+### Changed
+
+- Comparison reports identify the selected job without requiring runtime files
+- Report writes use an atomic temporary-file replacement
+- Package version increased to 0.11.0
+
 ## [0.10.0] - 2026-08-21
 
 ### Added

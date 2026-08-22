@@ -21,11 +21,13 @@ from simulation_assistant.formulas import (
 )
 from simulation_assistant.notifications import notifier_from_environment
 from simulation_assistant.plot_artifacts import (
+    PlotComparisonArtifact,
     format_file_size,
     matching_plot_artifacts,
     parameter_summary,
     preview_subsample_factor,
     resolve_plot_artifact,
+    write_plot_comparison_report,
 )
 from simulation_assistant.profiles import (
     ProfileStore,
@@ -2089,12 +2091,74 @@ class DesktopApp:
             ).pack(side="right")
 
         window.plot_images = image_references  # type: ignore[attr-defined]
+        actions = ttk.Frame(container, style="Card.TFrame")
+        actions.pack(fill="x", pady=(12, 0))
         ttk.Button(
-            container,
+            actions,
+            text="Export report",
+            style="Secondary.TButton",
+            command=lambda: self._export_plot_comparison_report(
+                window,
+                current_job,
+                plot,
+                comparisons,
+            ),
+        ).pack(side="left")
+        ttk.Button(
+            actions,
             text="Close",
             style="Primary.TButton",
             command=window.destroy,
-        ).pack(anchor="e", pady=(12, 0))
+        ).pack(side="right")
+
+    def _export_plot_comparison_report(
+        self,
+        parent: tk.Toplevel,
+        current_job: Job,
+        plot: dict[str, Any],
+        comparisons: list[PlotComparisonArtifact],
+    ) -> None:
+        tag = str(plot.get("tag") or "plot")
+        label = str(plot.get("label") or tag)
+        batch_slug = re.sub(
+            r"[^a-z0-9]+",
+            "-",
+            current_job.batch_name.lower(),
+        ).strip("-")[:48]
+        tag_slug = re.sub(r"[^a-z0-9]+", "-", tag.lower()).strip("-")[:32]
+        artifact_dir = Path(current_job.artifact_dir or "")
+        initial_dir = artifact_dir if artifact_dir.is_dir() else Path.cwd()
+        destination = filedialog.asksaveasfilename(
+            parent=parent,
+            title="Export plot comparison report",
+            initialdir=str(initial_dir.resolve()),
+            initialfile=f"{batch_slug or 'batch'}-{tag_slug or 'plot'}-comparison.html",
+            defaultextension=".html",
+            filetypes=[("HTML report", "*.html")],
+        )
+        if not destination:
+            return
+        try:
+            written = write_plot_comparison_report(
+                destination,
+                comparisons,
+                title=label,
+                batch_name=current_job.batch_name,
+                current_job_id=current_job.id,
+            )
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Export report", str(exc), parent=parent)
+            return
+        should_open = messagebox.askyesno(
+            "Report exported",
+            f"The self-contained report was saved to:\n{written}\n\nOpen it now?",
+            parent=parent,
+        )
+        if should_open:
+            try:
+                os.startfile(written)  # type: ignore[attr-defined]
+            except OSError as exc:
+                messagebox.showerror("Export report", str(exc), parent=parent)
 
     def _open_plot_artifact(self, path: Path | None) -> None:
         if path is None or not path.is_file():
