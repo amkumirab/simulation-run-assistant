@@ -32,7 +32,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
   targeted execution, monitoring, details, and retries
 - Native desktop assistant with no browser or local web server requirement
 - Local workspace profiles for recent models, COMSOL targets, formulas, and sweep presets
-- COMSOL Plot Group discovery, PNG export, native viewing, and sweep comparison
+- COMSOL Plot Group discovery, viewing, sweep comparison, and portable reports
 - Native parameter-sweep builder with Cartesian preview, sequential execution,
   and runtime estimates based on recent COMSOL runs
 - Safe custom output formulas and comparison across successful simulation states
@@ -131,6 +131,10 @@ Use **Compare runs** for any preview to place the same Plot Group from successfu
 jobs in that batch side by side. Each comparison card shows its job number,
 parameter state, image size, and original PNG action, while the selected job is
 clearly marked.
+Choose **Export report** from the comparison gallery to create one portable HTML
+file containing every displayed PNG and its full parameter table. The report is
+responsive, printable, and can be opened or shared without the database,
+artifact folders, a local server, or an internet connection.
 
 Profiles are stored in `.sim-assistant/profiles.json`, which is excluded by the
 repository's `.gitignore`. **Export template** creates a shareable JSON template
@@ -283,7 +287,7 @@ The repository intentionally leaves useful, portfolio-worthy increments for
 future commits:
 
 - COMSOL result-export contracts for additional model families
-- Contact-sheet export for selected sweep Plot Groups
+- Optional Telegram delivery for selected result plots
 - Attach result plots to Telegram messages
 - Parallel workers with configurable license-seat limits
 - Stop/cancel controls and stale-running-job recovery

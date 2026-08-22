@@ -182,6 +182,17 @@ the selected job in the gallery even when that job is older than the most recent
 12 results. Failed jobs, other batches, unmatched Plot Group tags, missing PNGs,
 and files outside their job artifact directories are excluded automatically.
 
+Choose **Export report** in the comparison window to save the displayed states
+as a self-contained HTML file. PNG bytes are embedded directly in the document,
+and every job card contains its complete recorded parameter table. The report
+uses a responsive card layout on screen and a two-column layout when printed.
+
+Exported reports do not contain source-model paths, artifact-directory paths, or
+external resources. Text values are escaped before writing, the target must use
+an `.html` extension, and the completed document replaces its temporary file
+atomically. After saving, the application can open the report in the system
+browser for immediate review.
+
 Supported formula operations are `+`, `-`, `*`, `/`, `%`, and `**`. Supported
 functions include `abs`, `sqrt`, `log`, `log10`, `exp`, `sin`, `cos`, `tan`,
 `min`, and `max`; constants `pi` and `e` are also available. Formulas are parsed

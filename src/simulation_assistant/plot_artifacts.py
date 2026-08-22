@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -143,6 +145,106 @@ def parameter_summary(parameters: Mapping[str, Any], limit: int = 4) -> str:
     if remaining:
         summary += f"  ·  +{remaining} more"
     return summary or "No recorded parameters"
+
+
+def write_plot_comparison_report(
+    output_path: str | Path,
+    comparisons: Iterable[PlotComparisonArtifact],
+    *,
+    title: str,
+    batch_name: str,
+    current_job_id: int | None = None,
+) -> Path:
+    """Write a portable HTML report with every PNG embedded as a data URI."""
+    destination = Path(output_path)
+    if destination.suffix.lower() not in {".html", ".htm"}:
+        raise ValueError("Plot comparison report must use the .html extension")
+    items = list(comparisons)
+    if len(items) < 2:
+        raise ValueError("Plot comparison report requires at least two states")
+    if not destination.parent.is_dir():
+        raise ValueError(f"Report directory was not found: {destination.parent}")
+
+    plot_tag = str(items[0].plot.get("tag") or "plot")
+    cards: list[str] = []
+    for item in items:
+        encoded = base64.b64encode(item.path.read_bytes()).decode("ascii")
+        parameter_rows = "".join(
+            "<tr><th>"
+            + escape(str(name))
+            + "</th><td>"
+            + escape(str(value))
+            + "</td></tr>"
+            for name, value in sorted(
+                item.job.parameters.items(), key=lambda pair: str(pair[0])
+            )
+        )
+        if not parameter_rows:
+            parameter_rows = (
+                '<tr><td colspan="2" class="empty">'
+                "No recorded parameters</td></tr>"
+            )
+        current_badge = (
+            '<span class="badge">Current selection</span>'
+            if item.job.id == current_job_id
+            else ""
+        )
+        cards.append(
+            f"""<article class="card{' current' if item.job.id == current_job_id else ''}">
+  <header><h2>Job #{item.job.id}</h2>{current_badge}</header>
+  <img src="data:image/png;base64,{encoded}" alt="{escape(title)} for job {item.job.id}">
+  <table><tbody>{parameter_rows}</tbody></table>
+  <footer>{escape(item.path.name)} · {format_file_size(item.path.stat().st_size)}</footer>
+</article>"""
+        )
+
+    document = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{escape(title)} comparison</title>
+<style>
+:root {{ color-scheme: light; font-family: "Segoe UI", Arial, sans-serif; color: #172630; background: #f3f6f8; }}
+* {{ box-sizing: border-box; }}
+body {{ margin: 0; padding: 32px; }}
+.page {{ max-width: 1500px; margin: 0 auto; }}
+.eyebrow {{ color: #246bfe; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }}
+h1 {{ margin: 6px 0; font-size: 28px; }}
+.summary {{ margin: 0 0 24px; color: #667681; }}
+.grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; align-items: start; }}
+.card {{ overflow: hidden; border: 1px solid #dce4e8; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(22, 50, 74, .08); }}
+.card.current {{ border: 2px solid #246bfe; }}
+.card header {{ display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; }}
+.card h2 {{ margin: 0; font-size: 17px; }}
+.badge {{ border-radius: 999px; padding: 4px 9px; color: #246bfe; background: #eaf1ff; font-size: 11px; font-weight: 700; }}
+.card img {{ display: block; width: 100%; height: auto; border-block: 1px solid #dce4e8; background: #f7f9fb; }}
+table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+th, td {{ padding: 8px 16px; border-bottom: 1px solid #edf1f3; text-align: left; vertical-align: top; }}
+th {{ width: 42%; color: #667681; font-weight: 600; }}
+.empty {{ color: #667681; text-align: center; }}
+.card footer {{ padding: 11px 16px; color: #667681; font-size: 12px; }}
+@media print {{ body {{ padding: 0; }} .grid {{ grid-template-columns: repeat(2, 1fr); }} .card {{ break-inside: avoid; box-shadow: none; }} }}
+</style>
+</head>
+<body>
+<main class="page">
+  <div class="eyebrow">Simulation comparison</div>
+  <h1>{escape(title)} · {escape(plot_tag)}</h1>
+  <p class="summary">Batch: {escape(batch_name)} · {len(items)} successful states · images embedded in this file</p>
+  <section class="grid">{''.join(cards)}</section>
+</main>
+</body>
+</html>
+"""
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    try:
+        temporary.write_text(document, encoding="utf-8", newline="\n")
+        temporary.replace(destination)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        raise
+    return destination.resolve()
 
 
 def format_file_size(byte_count: Any) -> str:

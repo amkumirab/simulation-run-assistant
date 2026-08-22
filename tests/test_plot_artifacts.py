@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from simulation_assistant.plot_artifacts import (
@@ -8,6 +9,7 @@ from simulation_assistant.plot_artifacts import (
     parameter_summary,
     preview_subsample_factor,
     resolve_plot_artifact,
+    write_plot_comparison_report,
 )
 from simulation_assistant.types import Job, JobStatus
 
@@ -138,6 +140,59 @@ class PlotArtifactTests(unittest.TestCase):
 
         self.assertEqual(summary, "frequency=85[kHz]  ·  gap=15[cm]  ·  +1 more")
         self.assertEqual(parameter_summary({}), "No recorded parameters")
+
+    def test_writes_a_self_contained_comparison_report(self) -> None:
+        first = replace(
+            self._job(1, batch="sweep-a"),
+            parameters={"frequency": "81[kHz]", "note": "<check & compare>"},
+        )
+        second = self._job(2, batch="sweep-a")
+        comparisons = matching_plot_artifacts(
+            [first, second],
+            batch_name="sweep-a",
+            plot_tag="pg1",
+        )
+        destination = self.root / "comparison.html"
+
+        written = write_plot_comparison_report(
+            destination,
+            comparisons,
+            title="Flux <density>",
+            batch_name="sweep & a",
+            current_job_id=first.id,
+        )
+        report = written.read_text(encoding="utf-8")
+
+        self.assertEqual(written, destination.resolve())
+        self.assertIn("data:image/png;base64,", report)
+        self.assertEqual(report.count("data:image/png;base64,"), 2)
+        self.assertIn("Flux &lt;density&gt;", report)
+        self.assertIn("&lt;check &amp; compare&gt;", report)
+        self.assertIn("Current selection", report)
+        self.assertNotIn(str(self.root), report)
+        self.assertNotIn("<check & compare>", report)
+
+    def test_rejects_invalid_comparison_report_targets(self) -> None:
+        comparisons = matching_plot_artifacts(
+            [self._job(1, batch="sweep-a"), self._job(2, batch="sweep-a")],
+            batch_name="sweep-a",
+            plot_tag="pg1",
+        )
+
+        with self.assertRaisesRegex(ValueError, "html extension"):
+            write_plot_comparison_report(
+                self.root / "comparison.txt",
+                comparisons,
+                title="Field",
+                batch_name="sweep-a",
+            )
+        with self.assertRaisesRegex(ValueError, "at least two"):
+            write_plot_comparison_report(
+                self.root / "comparison.html",
+                comparisons[:1],
+                title="Field",
+                batch_name="sweep-a",
+            )
 
     def _job(
         self,
