@@ -77,6 +77,56 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(self.store.get(first_id).status, JobStatus.QUEUED)
         self.assertEqual(self.store.get(selected_id).status, JobStatus.SUCCEEDED)
 
+    def test_paused_queue_does_not_claim_waiting_jobs(self) -> None:
+        job_id = self.store.enqueue_batch(
+            "paused", "mock-em", [{"frequency_ghz": 10}]
+        )[0]
+        self.store.set_queue_paused(True)
+
+        summary = SimulationRunner(self.store, self.root / "artifacts").run_pending()
+
+        self.assertEqual(summary.processed, 0)
+        self.assertEqual(self.store.get(job_id).status, JobStatus.QUEUED)
+        self.assertTrue(JobStore(self.store.path).is_queue_paused())
+
+        self.store.set_queue_paused(False)
+        resumed = SimulationRunner(self.store, self.root / "artifacts").run_pending()
+        self.assertEqual(resumed.succeeded, 1)
+
+    def test_cancelled_job_keeps_history_and_can_be_requeued(self) -> None:
+        job_id = self.store.enqueue_batch(
+            "cancel-demo", "mock-em", [{"frequency_ghz": 10}]
+        )[0]
+
+        self.store.cancel(job_id)
+
+        cancelled = self.store.get(job_id)
+        self.assertEqual(cancelled.status, JobStatus.CANCELLED)
+        self.assertEqual(cancelled.error, "Cancelled before execution")
+        self.assertIsNotNone(cancelled.finished_at)
+        self.store.retry(job_id)
+        self.assertEqual(self.store.get(job_id).status, JobStatus.QUEUED)
+
+    def test_recovers_interrupted_jobs_to_queue_or_failure(self) -> None:
+        first_id, second_id = self.store.enqueue_batch(
+            "interrupted",
+            "mock-em",
+            [{"frequency_ghz": 8}, {"frequency_ghz": 10}],
+        )
+        self.store.claim(first_id)
+        self.store.claim(second_id)
+
+        recovered = self.store.recover_interrupted(requeue=True)
+
+        self.assertEqual(recovered, [first_id, second_id])
+        self.assertEqual(self.store.get(first_id).status, JobStatus.QUEUED)
+        self.assertEqual(self.store.get(first_id).attempts, 1)
+        self.store.claim(first_id)
+        failed = self.store.recover_interrupted(requeue=False)
+        self.assertEqual(failed, [first_id])
+        self.assertEqual(self.store.get(first_id).status, JobStatus.FAILED)
+        self.assertIn("Interrupted run", self.store.get(first_id).error or "")
+
     def test_computed_outputs_are_saved_with_the_result(self) -> None:
         job_id = self.store.enqueue_batch(
             "formula-demo",

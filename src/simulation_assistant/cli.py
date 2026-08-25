@@ -49,8 +49,26 @@ def build_parser() -> argparse.ArgumentParser:
     show = subparsers.add_parser("show", help="Show one job as JSON")
     show.add_argument("job_id", type=int)
 
-    retry = subparsers.add_parser("retry", help="Requeue one failed job")
+    retry = subparsers.add_parser(
+        "retry", help="Requeue one failed or cancelled job"
+    )
     retry.add_argument("job_id", type=int)
+
+    cancel = subparsers.add_parser("cancel", help="Cancel one queued job")
+    cancel.add_argument("job_id", type=int)
+
+    subparsers.add_parser("pause", help="Pause the persistent run queue")
+    subparsers.add_parser("resume", help="Resume the persistent run queue")
+
+    recover = subparsers.add_parser(
+        "recover",
+        help="Resolve jobs left running by an interrupted worker",
+    )
+    recover.add_argument(
+        "--fail",
+        action="store_true",
+        help="Mark interrupted jobs failed instead of returning them to the queue",
+    )
 
     serve = subparsers.add_parser("serve", help="Start the local assistant dashboard")
     serve.add_argument("--host", default="127.0.0.1")
@@ -117,6 +135,19 @@ def main(argv: Sequence[str] | None = None) -> None:
         elif args.command == "retry":
             store.retry(args.job_id)
             print(f"Job {args.job_id} was returned to the queue.")
+        elif args.command == "cancel":
+            store.cancel(args.job_id)
+            print(f"Job {args.job_id} was cancelled.")
+        elif args.command == "pause":
+            store.set_queue_paused(True)
+            print("Run queue paused. The active job is not interrupted.")
+        elif args.command == "resume":
+            store.set_queue_paused(False)
+            print("Run queue resumed.")
+        elif args.command == "recover":
+            recovered = store.recover_interrupted(requeue=not args.fail)
+            action = "marked failed" if args.fail else "returned to the queue"
+            print(f"Recovered {len(recovered)} interrupted job(s): {action}.")
         elif args.command == "serve":
             serve_dashboard(args.database, args.artifacts, args.host, args.port)
         elif args.command == "desktop":

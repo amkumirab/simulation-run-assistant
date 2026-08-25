@@ -92,7 +92,7 @@
     .eyebrow { color: var(--blue); text-transform: uppercase; letter-spacing: .13em; font-size: 11px; font-weight: 800; }
     h1 { margin: 8px 0 10px; font-size: clamp(32px, 4vw, 52px); line-height: 1.04; letter-spacing: -.045em; }
     .hero p { margin: 0; color: var(--muted); font-size: 16px; max-width: 680px; }
-    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
+    .metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 24px 0; }
     .metric { padding: 16px 17px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.7); }
     .metric span { color: var(--muted); font-size: 12px; text-transform: capitalize; }
     .metric b { display: block; margin-top: 3px; font-size: 25px; letter-spacing: -.03em; }
@@ -179,6 +179,7 @@
     .status.running { color: var(--blue); background: var(--blue-soft); }
     .status.succeeded { color: var(--teal); background: var(--teal-soft); }
     .status.failed { color: var(--red); background: var(--red-soft); }
+    .status.cancelled { color: var(--muted); background: var(--surface-soft); }
     .empty-row { text-align: center; color: var(--muted); padding: 34px; }
     dialog { width: min(640px, calc(100vw - 30px)); border: 0; border-radius: 18px; padding: 0; box-shadow: 0 26px 90px rgba(10,26,38,.3); }
     dialog::backdrop { background: rgba(12,28,40,.4); backdrop-filter: blur(3px); }
@@ -258,6 +259,7 @@
         <div class="metric"><span>Running</span><b id="countRunning">0</b></div>
         <div class="metric"><span>Succeeded</span><b id="countSucceeded">0</b></div>
         <div class="metric"><span>Failed</span><b id="countFailed">0</b></div>
+        <div class="metric"><span>Cancelled</span><b id="countCancelled">0</b></div>
       </section>
 
       <div class="workspace">
@@ -316,7 +318,7 @@
       <section class="panel queue-panel" id="queuePanel">
         <div class="panel-head" style="padding-bottom:18px">
           <div class="panel-title"><div class="panel-index">3</div><div><h2>Run queue</h2><div class="panel-subtitle">Select a row to inspect parameters, results, artifacts, and errors.</div></div></div>
-          <div class="queue-toolbar"><select class="filter" id="statusFilter" aria-label="Filter by status"><option value="all">All statuses</option><option value="queued">Queued</option><option value="running">Running</option><option value="succeeded">Succeeded</option><option value="failed">Failed</option></select></div>
+          <div class="queue-toolbar"><select class="filter" id="statusFilter" aria-label="Filter by status"><option value="all">All statuses</option><option value="queued">Queued</option><option value="running">Running</option><option value="succeeded">Succeeded</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option></select></div>
         </div>
         <div class="table-wrap"><table><thead><tr><th>ID</th><th>Run</th><th>Adapter</th><th>Status</th><th>Attempts</th><th>Created</th></tr></thead><tbody id="jobs"><tr><td class="empty-row" colspan="6">No jobs yet.</td></tr></tbody></table></div>
       </section>
@@ -487,7 +489,7 @@
       const button = byId('quickRunNext'); button.disabled = true;
       try {
         const summary = await api('/api/queue/run-next', { method: 'POST', body: JSON.stringify({ connection: connectionPayload() }) });
-        const message = summary.processed ? `${summary.succeeded} succeeded, ${summary.failed} failed.` : 'The queue is empty.';
+        const message = summary.processed ? `${summary.succeeded} succeeded, ${summary.failed} failed.` : (summary.queue_paused ? 'The queue is paused.' : 'The queue is empty.');
         addMessage('Queue worker finished', message, summary.failed ? 'error' : 'success'); notify(message, Boolean(summary.failed)); await refreshJobs();
       } catch (error) { addMessage('Worker failed', error.message, 'error'); notify(error.message, true); }
       finally { button.disabled = false; }
@@ -496,7 +498,7 @@
     async function refreshJobs() {
       try {
         const data = await api('/api/jobs'); state.jobs = data.jobs;
-        ['queued', 'running', 'succeeded', 'failed'].forEach(status => byId(`count${status[0].toUpperCase()}${status.slice(1)}`).textContent = data.counts[status] || 0);
+        ['queued', 'running', 'succeeded', 'failed', 'cancelled'].forEach(status => byId(`count${status[0].toUpperCase()}${status.slice(1)}`).textContent = data.counts[status] || 0);
         renderJobs(); byId('updated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
       } catch (error) { byId('updated').textContent = 'Dashboard unavailable'; }
     }
@@ -528,7 +530,7 @@
         if (job.error) { const error = document.createElement('div'); error.className = 'error-box'; error.textContent = job.error; body.append(error); }
         const raw = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Show raw job data';
         const pre = document.createElement('pre'); pre.textContent = JSON.stringify(job, null, 2); raw.append(summary, pre); body.append(raw);
-        if (job.status === 'failed') { const retry = document.createElement('button'); retry.className = 'button secondary'; retry.style.marginTop = '14px'; retry.textContent = 'Retry this job'; retry.addEventListener('click', () => retryJob(job.id)); body.append(retry); }
+        if (job.status === 'failed' || job.status === 'cancelled') { const retry = document.createElement('button'); retry.className = 'button secondary'; retry.style.marginTop = '14px'; retry.textContent = job.status === 'cancelled' ? 'Requeue this job' : 'Retry this job'; retry.addEventListener('click', () => retryJob(job.id)); body.append(retry); }
         byId('jobDialog').showModal();
       } catch (error) { notify(error.message, true); }
     }
@@ -548,7 +550,7 @@
     }
 
     async function retryJob(jobId) {
-      try { await api(`/api/jobs/${jobId}/retry`, { method: 'POST', body: '{}' }); byId('jobDialog').close(); addMessage(`Job #${jobId} requeued`, 'The failed run is ready to be processed again.', 'success'); await refreshJobs(); }
+      try { await api(`/api/jobs/${jobId}/retry`, { method: 'POST', body: '{}' }); byId('jobDialog').close(); addMessage(`Job #${jobId} requeued`, 'The run is ready to be processed again.', 'success'); await refreshJobs(); }
       catch (error) { notify(error.message, true); }
     }
 

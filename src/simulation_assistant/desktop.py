@@ -283,6 +283,7 @@ class DesktopApp:
         self.compare_x_var = tk.StringVar()
         self.compare_best_var = tk.StringVar(value="Choose an output metric to compare runs.")
         self.sweep_summary_var = tk.StringVar(value="1 simulation state")
+        self.queue_status_var = tk.StringVar(value="Queue status unavailable")
 
         for variable in (
             self.executable_var,
@@ -736,15 +737,41 @@ class DesktopApp:
         )
         ttk.Label(
             toolbar,
-            text="Double-click a run to inspect inputs, formulas, metrics, and errors.",
+            textvariable=self.queue_status_var,
             style="CardText.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(3, 0))
+
+        controls = ttk.Frame(toolbar, style="Card.TFrame")
+        controls.grid(row=0, column=1, rowspan=2, sticky="e")
+        self.pause_queue_button = ttk.Button(
+            controls,
+            text="Pause queue",
+            style="Secondary.TButton",
+            command=self._toggle_queue_pause,
+        )
+        self.pause_queue_button.pack(side="left")
+        self.cancel_job_button = ttk.Button(
+            controls,
+            text="Cancel selected",
+            style="Secondary.TButton",
+            command=self._cancel_selected_job,
+            state="disabled",
+        )
+        self.cancel_job_button.pack(side="left", padx=(8, 0))
+        self.recover_jobs_button = ttk.Button(
+            controls,
+            text="Recover interrupted",
+            style="Secondary.TButton",
+            command=self._recover_interrupted_jobs,
+            state="disabled",
+        )
+        self.recover_jobs_button.pack(side="left", padx=(8, 0))
         ttk.Button(
-            toolbar,
+            controls,
             text="Refresh",
             style="Secondary.TButton",
             command=self.refresh_jobs,
-        ).grid(row=0, column=1, rowspan=2, sticky="e")
+        ).pack(side="left", padx=(8, 0))
 
         self.jobs_tree = ttk.Treeview(
             card,
@@ -770,6 +797,7 @@ class DesktopApp:
             )
         self.jobs_tree.grid(row=1, column=0, sticky="nsew")
         self.jobs_tree.bind("<Double-1>", self._open_selected_job)
+        self.jobs_tree.bind("<<TreeviewSelect>>", self._queue_selection_changed)
 
     def _build_compare(self, parent: ttk.Frame) -> None:
         parent.grid_columnconfigure(0, weight=1)
@@ -1534,6 +1562,8 @@ class DesktopApp:
     def submit_run(self, *, start: bool) -> None:
         try:
             config = self._require_connected_config()
+            if start and self.store.is_queue_paused():
+                raise ValueError("Run queue is paused. Resume it before starting jobs")
             parameter_sets = self._collect_parameter_sets()
             formulas = self._collect_formulas()
             batch_name = self.batch_var.get().strip()
@@ -1585,6 +1615,8 @@ class DesktopApp:
         succeeded = 0
         failed = 0
         for job_id in job_ids:
+            if runner.store.is_queue_paused():
+                break
             summary = runner.run_job(job_id)
             succeeded += summary.succeeded
             failed += summary.failed
@@ -1603,10 +1635,17 @@ class DesktopApp:
         self.activity_var.set(
             f"Sweep finished: {summary['succeeded']} succeeded, {summary['failed']} failed."
         )
+        if summary["succeeded"] + summary["failed"] < len(job_ids):
+            remaining = len(job_ids) - summary["succeeded"] - summary["failed"]
+            self.activity_var.set(
+                f"Sweep paused with {remaining} job(s) still in the queue."
+            )
         self.notebook.select(2)
 
     def run_next(self) -> None:
         try:
+            if self.store.is_queue_paused():
+                raise ValueError("Run queue is paused. Resume it before running a job")
             config = self._require_connected_config()
         except (OSError, ValueError) as exc:
             messagebox.showerror("Run queue", str(exc), parent=self.root)
@@ -1676,7 +1715,100 @@ class DesktopApp:
                     job.created_at.replace("T", " "),
                 ),
             )
+        self._update_queue_controls()
         self.refresh_comparison()
+
+    def _update_queue_controls(self) -> None:
+        if not hasattr(self, "pause_queue_button"):
+            return
+        counts = self.store.counts()
+        paused = self.store.is_queue_paused()
+        state = "Paused" if paused else "Ready"
+        queued = counts[JobStatus.QUEUED.value]
+        running = counts[JobStatus.RUNNING.value]
+        cancelled = counts[JobStatus.CANCELLED.value]
+        self.queue_status_var.set(
+            f"{state} · {queued} queued · {running} running · "
+            f"{cancelled} cancelled"
+        )
+        self.pause_queue_button.configure(
+            text="Resume queue" if paused else "Pause queue"
+        )
+        recover_state = "normal" if running and not self.busy else "disabled"
+        self.recover_jobs_button.configure(state=recover_state)
+        self._queue_selection_changed()
+
+    def _queue_selection_changed(self, _event: tk.Event | None = None) -> None:
+        if not hasattr(self, "cancel_job_button"):
+            return
+        selection = self.jobs_tree.selection()
+        can_cancel = False
+        if selection:
+            try:
+                can_cancel = (
+                    self.store.get(int(selection[0])).status == JobStatus.QUEUED
+                )
+            except (KeyError, ValueError):
+                can_cancel = False
+        self.cancel_job_button.configure(
+            state="normal" if can_cancel else "disabled"
+        )
+
+    def _toggle_queue_pause(self) -> None:
+        paused = not self.store.is_queue_paused()
+        self.store.set_queue_paused(paused)
+        self.refresh_jobs()
+        self._set_run_actions(self.connection_report is not None)
+        if paused:
+            self.activity_var.set(
+                "Queue paused. A currently running simulation will finish normally."
+            )
+        else:
+            self.activity_var.set("Queue resumed and ready to process waiting jobs.")
+
+    def _cancel_selected_job(self) -> None:
+        selection = self.jobs_tree.selection()
+        if not selection:
+            return
+        job_id = int(selection[0])
+        if not messagebox.askyesno(
+            "Cancel queued job",
+            f"Cancel Job #{job_id}? Its history will remain available and it can be requeued later.",
+            parent=self.root,
+        ):
+            return
+        try:
+            self.store.cancel(job_id)
+        except ValueError as exc:
+            messagebox.showerror("Cancel job", str(exc), parent=self.root)
+            return
+        self.refresh_jobs()
+        self.activity_var.set(f"Job #{job_id} was cancelled before execution.")
+
+    def _recover_interrupted_jobs(self) -> None:
+        if self.busy:
+            messagebox.showerror(
+                "Recover interrupted jobs",
+                "Wait for the current desktop run to finish before recovery.",
+                parent=self.root,
+            )
+            return
+        running = self.store.list(status=JobStatus.RUNNING, limit=500)
+        if not running:
+            self.refresh_jobs()
+            return
+        choice = messagebox.askyesnocancel(
+            "Recover interrupted jobs",
+            f"Found {len(running)} job(s) marked running. Only continue when no other worker is active.\n\n"
+            "Yes: return them to the queue\nNo: mark them as failed\nCancel: leave them unchanged",
+            parent=self.root,
+        )
+        if choice is None:
+            return
+        recovered = self.store.recover_interrupted(requeue=choice)
+        self.refresh_jobs()
+        action = "returned to the queue" if choice else "marked as failed"
+        self.activity_var.set(f"{len(recovered)} interrupted job(s) {action}.")
 
     def _open_selected_job(self, _event: tk.Event) -> None:
         selection = self.jobs_tree.selection()
@@ -1720,6 +1852,16 @@ class DesktopApp:
         if plot_exports:
             self._add_plot_viewer(notebook, job, plot_exports)
         for title, values in (
+            (
+                "Run status",
+                {
+                    "status": job.status.value,
+                    "error": job.error or "",
+                    "created_at": job.created_at,
+                    "started_at": job.started_at or "",
+                    "finished_at": job.finished_at or "",
+                },
+            ),
             ("Inputs", job.parameters),
             ("Formulas", job.output_formulas),
             ("Metrics", (job.result or {}).get("metrics", {})),
@@ -1750,10 +1892,10 @@ class DesktopApp:
                 style="Secondary.TButton",
                 command=lambda path=job.artifact_dir: self._open_artifacts(path),
             ).pack(side="left")
-        if job.status == JobStatus.FAILED:
+        if job.status in {JobStatus.FAILED, JobStatus.CANCELLED}:
             ttk.Button(
                 footer,
-                text="Retry",
+                text="Retry" if job.status == JobStatus.FAILED else "Requeue",
                 style="Secondary.TButton",
                 command=lambda: self._retry_job(job.id, window),
             ).pack(side="left", padx=(8, 0))
@@ -2427,9 +2569,12 @@ class DesktopApp:
 
     def _set_run_actions(self, enabled: bool) -> None:
         state = "normal" if enabled and not self.busy else "disabled"
-        self.run_now_button.configure(state=state)
+        queue_paused = self.store.is_queue_paused()
+        run_state = "disabled" if queue_paused else state
+        self.run_now_button.configure(state=run_state)
         self.queue_button.configure(state=state)
-        self.run_next_button.configure(state=state)
+        self.run_next_button.configure(state=run_state)
+        self._update_queue_controls()
 
     def _run_background(
         self,

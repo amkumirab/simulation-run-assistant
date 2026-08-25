@@ -61,6 +61,25 @@ class TelegramBotTests(unittest.TestCase):
 
         self.assertIn("Queued: 1", response or "")
         self.assertIn("Succeeded: 0", response or "")
+        self.assertIn("Cancelled: 0", response or "")
+        self.assertIn("Control: ready", response or "")
+
+    def test_controls_waiting_jobs_remotely(self) -> None:
+        job_id = self.store.enqueue_batch(
+            "remote-control", "mock-em", [{"frequency_ghz": 10}]
+        )[0]
+
+        paused = self.send("/pause")
+        blocked = self.send("/run 1")
+        cancelled = self.send(f"/cancel {job_id}")
+
+        self.assertIn("Queue paused", paused or "")
+        self.assertIn("Queue is paused", blocked or "")
+        self.assertIn("was cancelled", cancelled or "")
+        self.assertEqual(self.store.get(job_id).status, JobStatus.CANCELLED)
+        self.assertIn("Queue resumed", self.send("/resume") or "")
+        self.assertIn("returned to the queue", self.send(f"/retry {job_id}") or "")
+        self.assertEqual(self.store.get(job_id).status, JobStatus.QUEUED)
 
     def test_run_processes_a_bounded_number_of_jobs(self) -> None:
         first, second = self.store.enqueue_batch(

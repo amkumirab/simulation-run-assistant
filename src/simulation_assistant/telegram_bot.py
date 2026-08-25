@@ -34,13 +34,16 @@ COMMANDS = [
     {"command": "jobs", "description": "List recent jobs"},
     {"command": "job", "description": "Show one job"},
     {"command": "run", "description": "Process queued jobs"},
-    {"command": "retry", "description": "Retry a failed job"},
+    {"command": "retry", "description": "Requeue a failed or cancelled job"},
+    {"command": "cancel", "description": "Cancel one queued job"},
+    {"command": "pause", "description": "Pause new queue claims"},
+    {"command": "resume", "description": "Resume queue processing"},
     {"command": "help", "description": "Show available commands"},
 ]
 
 BOT_DESCRIPTION = (
     "Monitor a local Simulation Run Assistant queue, inspect job results, "
-    "retry failures, and start bounded worker runs from an authorized chat."
+    "control waiting jobs, and start bounded worker runs from an authorized chat."
 )
 BOT_SHORT_DESCRIPTION = "Monitor and control reproducible simulation runs."
 
@@ -50,7 +53,10 @@ HELP_TEXT = """Simulation Run Assistant
 /jobs [limit] - list 1 to 10 recent jobs
 /job ID - show one job and its metrics
 /run [limit] - process queued jobs (default limit: 1, maximum: 10)
-/retry ID - return a failed job to the queue
+/retry ID - return a failed or cancelled job to the queue
+/cancel ID - cancel one queued job
+/pause - pause new queue claims
+/resume - resume queue processing
 /help - show this message
 
 Only the configured Telegram chat can use this bot."""
@@ -96,10 +102,12 @@ class TelegramBotController:
             counts = self.store.counts()
             return (
                 "Queue status\n"
+                f"Control: {'paused' if self.store.is_queue_paused() else 'ready'}\n"
                 f"Queued: {counts['queued']}\n"
                 f"Running: {counts['running']}\n"
                 f"Succeeded: {counts['succeeded']}\n"
-                f"Failed: {counts['failed']}"
+                f"Failed: {counts['failed']}\n"
+                f"Cancelled: {counts['cancelled']}"
             )
         if command == "/jobs":
             limit = _optional_limit(arguments, default=5)
@@ -132,6 +140,8 @@ class TelegramBotController:
                 lines.append(f"Error: {job.error}")
             return "\n".join(lines)
         if command == "/run":
+            if self.store.is_queue_paused():
+                return "Queue is paused. Use /resume before processing jobs."
             limit = _optional_limit(arguments, default=1)
             summary = SimulationRunner(
                 store=self.store,
@@ -149,6 +159,16 @@ class TelegramBotController:
             job_id = _required_job_id(arguments)
             self.store.retry(job_id)
             return f"Job #{job_id} returned to the queue."
+        if command == "/cancel":
+            job_id = _required_job_id(arguments)
+            self.store.cancel(job_id)
+            return f"Job #{job_id} was cancelled."
+        if command == "/pause":
+            self.store.set_queue_paused(True)
+            return "Queue paused. A running job will finish normally."
+        if command == "/resume":
+            self.store.set_queue_paused(False)
+            return "Queue resumed."
         return "Unknown command. Use /help to see available commands."
 
 
