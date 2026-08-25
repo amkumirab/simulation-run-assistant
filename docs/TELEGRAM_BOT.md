@@ -116,7 +116,10 @@ Keep this process running. Stop it with `Ctrl+C`. Available commands:
 /jobs [limit]    List 1 to 10 recent jobs
 /job ID          Show status, metrics, and error for one job
 /run [limit]     Process 1 to 10 queued jobs; default is 1
-/retry ID        Return a failed job to the queue
+/retry ID        Return a failed or cancelled job to the queue
+/cancel ID       Cancel one queued job
+/pause           Pause new queue claims
+/resume          Resume queue processing
 /help            Show command help
 ```
 

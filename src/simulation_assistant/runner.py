@@ -41,6 +41,9 @@ class SimulationRunner:
         if limit is not None and limit < 1:
             raise ValueError("limit must be greater than zero")
 
+        if self.store.is_queue_paused():
+            return RunSummary(processed=0, succeeded=0, failed=0)
+
         processed = succeeded = failed = 0
         while limit is None or processed < limit:
             job = self.store.claim_next()

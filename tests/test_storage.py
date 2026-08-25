@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from simulation_assistant.storage import JobStore
+from simulation_assistant.types import JobStatus
 
 
 class StorageMigrationTests(unittest.TestCase):
@@ -47,6 +48,16 @@ class StorageMigrationTests(unittest.TestCase):
                 store.get(job_id).output_formulas,
                 {"double_value": "value * 2"},
             )
+            store.cancel(job_id)
+            self.assertEqual(store.get(job_id).status, JobStatus.CANCELLED)
+            connection = sqlite3.connect(database)
+            try:
+                schema = connection.execute(
+                    "SELECT sql FROM sqlite_master WHERE name = 'jobs'"
+                ).fetchone()[0]
+            finally:
+                connection.close()
+            self.assertIn("cancelled", schema)
 
 
 if __name__ == "__main__":

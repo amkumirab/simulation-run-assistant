@@ -32,7 +32,9 @@ class JobStore:
                     batch_name TEXT NOT NULL,
                     adapter TEXT NOT NULL,
                     status TEXT NOT NULL CHECK (
-                        status IN ('queued', 'running', 'succeeded', 'failed')
+                        status IN (
+                            'queued', 'running', 'succeeded', 'failed', 'cancelled'
+                        )
                     ),
                     parameters TEXT NOT NULL,
                     output_formulas TEXT NOT NULL DEFAULT '{}',
@@ -45,6 +47,12 @@ class JobStore:
                     finished_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_jobs_status_id ON jobs(status, id);
+                CREATE TABLE IF NOT EXISTS queue_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+                INSERT OR IGNORE INTO queue_settings(key, value)
+                VALUES ('paused', '0');
                 """
             )
             columns = {
@@ -56,6 +64,52 @@ class JobStore:
                     "ALTER TABLE jobs ADD COLUMN output_formulas TEXT NOT NULL "
                     "DEFAULT '{}'"
                 )
+            schema = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+            ).fetchone()
+            if schema is not None and "cancelled" not in str(schema["sql"]).lower():
+                self._migrate_status_constraint(connection)
+
+    @staticmethod
+    def _migrate_status_constraint(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            BEGIN IMMEDIATE;
+            ALTER TABLE jobs RENAME TO jobs_before_status_migration;
+            CREATE TABLE jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_name TEXT NOT NULL,
+                adapter TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (
+                    status IN (
+                        'queued', 'running', 'succeeded', 'failed', 'cancelled'
+                    )
+                ),
+                parameters TEXT NOT NULL,
+                output_formulas TEXT NOT NULL DEFAULT '{}',
+                result TEXT,
+                error TEXT,
+                artifact_dir TEXT,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT
+            );
+            INSERT INTO jobs(
+                id, batch_name, adapter, status, parameters, output_formulas,
+                result, error, artifact_dir, attempts, created_at, started_at,
+                finished_at
+            )
+            SELECT
+                id, batch_name, adapter, status, parameters, output_formulas,
+                result, error, artifact_dir, attempts, created_at, started_at,
+                finished_at
+            FROM jobs_before_status_migration;
+            DROP TABLE jobs_before_status_migration;
+            CREATE INDEX idx_jobs_status_id ON jobs(status, id);
+            COMMIT;
+            """
+        )
 
     def enqueue_batch(
         self,
@@ -101,6 +155,9 @@ class JobStore:
         """Atomically move the oldest queued job to running."""
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            if self._queue_paused(connection):
+                connection.commit()
+                return None
             row = connection.execute(
                 "SELECT * FROM jobs WHERE status = ? ORDER BY id LIMIT 1",
                 (JobStatus.QUEUED.value,),
@@ -126,6 +183,8 @@ class JobStore:
         """Atomically move one specific queued job to running."""
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            if self._queue_paused(connection):
+                raise ValueError("Run queue is paused")
             row = connection.execute(
                 "SELECT status FROM jobs WHERE id = ?", (job_id,)
             ).fetchone()
@@ -198,12 +257,92 @@ class JobStore:
                 UPDATE jobs
                 SET status = ?, error = NULL, result = NULL, artifact_dir = NULL,
                     started_at = NULL, finished_at = NULL
-                WHERE id = ? AND status = ?
+                WHERE id = ? AND status IN (?, ?)
                 """,
-                (JobStatus.QUEUED.value, job_id, JobStatus.FAILED.value),
+                (
+                    JobStatus.QUEUED.value,
+                    job_id,
+                    JobStatus.FAILED.value,
+                    JobStatus.CANCELLED.value,
+                ),
             )
             if cursor.rowcount != 1:
-                raise ValueError(f"Job {job_id} does not exist or is not failed")
+                raise ValueError(
+                    f"Job {job_id} does not exist or is not failed or cancelled"
+                )
+
+    def cancel(self, job_id: int) -> None:
+        """Cancel one queued job without deleting its history."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET status = ?, error = ?, finished_at = ?
+                WHERE id = ? AND status = ?
+                """,
+                (
+                    JobStatus.CANCELLED.value,
+                    "Cancelled before execution",
+                    utc_now(),
+                    job_id,
+                    JobStatus.QUEUED.value,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Job {job_id} does not exist or is not queued")
+
+    def is_queue_paused(self) -> bool:
+        with self._connect() as connection:
+            return self._queue_paused(connection)
+
+    def set_queue_paused(self, paused: bool) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO queue_settings(key, value) VALUES ('paused', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                ("1" if paused else "0",),
+            )
+
+    def recover_interrupted(self, *, requeue: bool) -> list[int]:
+        """Resolve jobs left running after an interrupted worker process."""
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                "SELECT id FROM jobs WHERE status = ? ORDER BY id",
+                (JobStatus.RUNNING.value,),
+            ).fetchall()
+            job_ids = [int(row["id"]) for row in rows]
+            if not job_ids:
+                connection.commit()
+                return []
+            if requeue:
+                connection.execute(
+                    """
+                    UPDATE jobs
+                    SET status = ?, error = NULL, result = NULL, artifact_dir = NULL,
+                        started_at = NULL, finished_at = NULL
+                    WHERE status = ?
+                    """,
+                    (JobStatus.QUEUED.value, JobStatus.RUNNING.value),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE jobs
+                    SET status = ?, error = ?, finished_at = ?
+                    WHERE status = ?
+                    """,
+                    (
+                        JobStatus.FAILED.value,
+                        "Interrupted run recovered by user",
+                        utc_now(),
+                        JobStatus.RUNNING.value,
+                    ),
+                )
+            connection.commit()
+        return job_ids
 
     def get(self, job_id: int) -> Job:
         with self._connect() as connection:
@@ -236,6 +375,13 @@ class JobStore:
         for row in rows:
             counts[str(row["status"])] = int(row["count"])
         return counts
+
+    @staticmethod
+    def _queue_paused(connection: sqlite3.Connection) -> bool:
+        row = connection.execute(
+            "SELECT value FROM queue_settings WHERE key = 'paused'"
+        ).fetchone()
+        return row is not None and str(row["value"]) == "1"
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:

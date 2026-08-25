@@ -102,7 +102,9 @@ def create_dashboard_server(
                 if path == "/api/queue/run-next":
                     config = _config_from_payload(payload)
                     summary = _runner(store, artifact_root, config).run_pending(limit=1)
-                    self._json(HTTPStatus.OK, _summary_payload(summary))
+                    response = _summary_payload(summary)
+                    response["queue_paused"] = store.is_queue_paused()
+                    self._json(HTTPStatus.OK, response)
                     return
                 match = RETRY_PATH.match(path)
                 if match:

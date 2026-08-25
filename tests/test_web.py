@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from simulation_assistant.storage import JobStore
 from simulation_assistant.web import create_dashboard_server
 
 
@@ -153,6 +154,34 @@ class DashboardTests(unittest.TestCase):
         self.assertTrue(payload["model_configured"])
         self.assertEqual(payload["model_filename"], "sensitive-model.mph")
         self.assertNotIn(private_path, body)
+
+    def test_run_next_reports_a_paused_queue(self) -> None:
+        status, _, _ = self.request(
+            "POST",
+            "/api/runs",
+            {
+                "connection": self.connection(),
+                "batch_name": "paused-dashboard",
+                "parameters": {"frequency": "90[kHz]"},
+                "start": False,
+            },
+            token=self.token,
+        )
+        self.assertEqual(status, 201)
+        store = JobStore(self.root / "jobs.db")
+        store.set_queue_paused(True)
+
+        status, _, body = self.request(
+            "POST",
+            "/api/queue/run-next",
+            {"connection": self.connection()},
+            token=self.token,
+        )
+
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["processed"], 0)
+        self.assertTrue(payload["queue_paused"])
 
     def test_refuses_non_local_bindings(self) -> None:
         with self.assertRaisesRegex(ValueError, "loopback"):

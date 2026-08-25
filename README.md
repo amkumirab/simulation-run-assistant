@@ -23,8 +23,8 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 ### Current features
 
 - JSON manifests with explicit jobs or Cartesian parameter sweeps
-- Persistent SQLite queue with atomic job claiming
-- Failure isolation and explicit retry workflow
+- Persistent SQLite queue with atomic claiming, pause/resume controls, and recovery
+- Failure isolation, reversible queued-job cancellation, and explicit retries
 - Pluggable simulation adapter interface and official COMSOL batch bridge
 - Deterministic electromagnetic mock adapter for demos and CI
 - Per-job JSON results and dependency-free SVG response plots
@@ -113,6 +113,12 @@ model inputs, computed-output formulas, Run now and Queue only actions, run
 details, local artifact access, and visual comparison for repeated simulation
 states. It does not start an HTTP server or require a browser.
 
+The **Runs** tab also provides persistent **Pause queue**, **Cancel selected**, and
+**Recover interrupted** controls. Pausing never terminates the active COMSOL
+process; it prevents the next job from starting. Recovery is always explicit so
+an active worker in another terminal is not mistaken for an interrupted run.
+See [`docs/QUEUE_CONTROL.md`](docs/QUEUE_CONTROL.md) for the safe workflow.
+
 Use the **Workspace profile** controls to save a repeatable local setup. A profile
 remembers the COMSOL executable, MPH model, Study or Job Sequence, timeout, core
 count, run label, raw parameter values, Fixed/Sweep modes, and computed-output
@@ -198,7 +204,11 @@ sim-assistant enqueue MANIFEST         Add a batch to the queue
 sim-assistant run [--limit N]          Process queued jobs
 sim-assistant list [--status STATUS]   List recent jobs
 sim-assistant show JOB_ID              Print one complete job as JSON
-sim-assistant retry JOB_ID             Requeue a failed job
+sim-assistant retry JOB_ID             Requeue a failed or cancelled job
+sim-assistant cancel JOB_ID            Cancel one queued job
+sim-assistant pause                    Pause new queue claims
+sim-assistant resume                   Resume queue processing
+sim-assistant recover [--fail]         Resolve interrupted running jobs
 sim-assistant serve [--port 8080]      Start the local dashboard
 sim-assistant desktop                  Start the native desktop assistant
 sim-assistant telegram-id              Discover recent Telegram chat IDs
@@ -233,7 +243,8 @@ bot with:
 sim-assistant bot
 ```
 
-It supports `/status`, `/jobs`, `/job`, `/run`, `/retry`, and `/help`. Commands
+It supports `/status`, `/jobs`, `/job`, `/run`, `/retry`, `/cancel`, `/pause`,
+`/resume`, and `/help`. Commands
 from chats other than `TELEGRAM_CHAT_ID` are ignored. See the complete
 [Telegram setup guide](docs/TELEGRAM_BOT.md).
 
@@ -290,7 +301,7 @@ future commits:
 - Optional Telegram delivery for selected result plots
 - Attach result plots to Telegram messages
 - Parallel workers with configurable license-seat limits
-- Stop/cancel controls and stale-running-job recovery
+- Graceful active-process stop with solver-aware cleanup
 - Multi-objective ranking and convergence diagnostics
 - Authentication before any non-local deployment
 - Container image and scheduled worker mode

@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.12.0] - 2026-08-25
+
+### Added
+
+- Persistent pause and resume controls for the local run queue
+- Reversible cancellation for queued jobs with a dedicated cancelled status
+- Explicit recovery workflow for jobs left running after an interrupted worker
+- Native queue controls with live queued, running, and cancelled counts
+- CLI commands for pause, resume, cancel, and interrupted-run recovery
+- Run-status details with errors and lifecycle timestamps in the desktop app
+- Backward-compatible SQLite status-constraint migration
+- Tests for pause persistence, cancellation, requeueing, and both recovery paths
+
+### Changed
+
+- Queue claims now verify the persistent pause state inside their transaction
+- Cancelled jobs can be returned to the queue from desktop, web, or CLI workflows
+- Dashboard and Telegram status views include cancelled-job counts
+- Package version increased to 0.12.0
+
 ## [0.11.0] - 2026-08-22
 
 ### Added
