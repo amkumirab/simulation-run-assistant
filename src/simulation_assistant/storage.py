@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from simulation_assistant.formulas import validate_output_formulas
+from simulation_assistant.preflight import build_run_signature
 from simulation_assistant.types import Job, JobStatus
 
 
@@ -38,6 +39,8 @@ class JobStore:
                     ),
                     parameters TEXT NOT NULL,
                     output_formulas TEXT NOT NULL DEFAULT '{}',
+                    run_signature TEXT,
+                    run_context TEXT NOT NULL DEFAULT '{}',
                     result TEXT,
                     error TEXT,
                     artifact_dir TEXT,
@@ -64,11 +67,21 @@ class JobStore:
                     "ALTER TABLE jobs ADD COLUMN output_formulas TEXT NOT NULL "
                     "DEFAULT '{}'"
                 )
+            if "run_signature" not in columns:
+                connection.execute("ALTER TABLE jobs ADD COLUMN run_signature TEXT")
+            if "run_context" not in columns:
+                connection.execute(
+                    "ALTER TABLE jobs ADD COLUMN run_context TEXT NOT NULL DEFAULT '{}'"
+                )
             schema = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
             ).fetchone()
             if schema is not None and "cancelled" not in str(schema["sql"]).lower():
                 self._migrate_status_constraint(connection)
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_jobs_signature_status "
+                "ON jobs(run_signature, status, id)"
+            )
 
     @staticmethod
     def _migrate_status_constraint(connection: sqlite3.Connection) -> None:
@@ -87,6 +100,8 @@ class JobStore:
                 ),
                 parameters TEXT NOT NULL,
                 output_formulas TEXT NOT NULL DEFAULT '{}',
+                run_signature TEXT,
+                run_context TEXT NOT NULL DEFAULT '{}',
                 result TEXT,
                 error TEXT,
                 artifact_dir TEXT,
@@ -97,13 +112,13 @@ class JobStore:
             );
             INSERT INTO jobs(
                 id, batch_name, adapter, status, parameters, output_formulas,
-                result, error, artifact_dir, attempts, created_at, started_at,
-                finished_at
+                run_signature, run_context, result, error, artifact_dir, attempts,
+                created_at, started_at, finished_at
             )
             SELECT
                 id, batch_name, adapter, status, parameters, output_formulas,
-                result, error, artifact_dir, attempts, created_at, started_at,
-                finished_at
+                run_signature, run_context, result, error, artifact_dir, attempts,
+                created_at, started_at, finished_at
             FROM jobs_before_status_migration;
             DROP TABLE jobs_before_status_migration;
             CREATE INDEX idx_jobs_status_id ON jobs(status, id);
@@ -117,9 +132,12 @@ class JobStore:
         adapter: str,
         parameter_sets: Iterable[dict[str, Any]],
         output_formulas: dict[str, str] | None = None,
+        run_context: dict[str, Any] | None = None,
     ) -> list[int]:
         created_at = utc_now()
         formulas = validate_output_formulas(output_formulas)
+        context = dict(run_context or {})
+        context_json = json.dumps(context, sort_keys=True)
         rows = [
             (
                 batch_name,
@@ -127,6 +145,12 @@ class JobStore:
                 JobStatus.QUEUED.value,
                 json.dumps(parameters, sort_keys=True),
                 json.dumps(formulas, sort_keys=True),
+                (
+                    build_run_signature(adapter, parameters, formulas, context)
+                    if run_context is not None
+                    else None
+                ),
+                context_json,
                 created_at,
             )
             for parameters in parameter_sets
@@ -142,9 +166,9 @@ class JobStore:
                     """
                     INSERT INTO jobs(
                         batch_name, adapter, status, parameters,
-                        output_formulas, created_at
+                        output_formulas, run_signature, run_context, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     row,
                 )
@@ -366,6 +390,19 @@ class JobStore:
                 ).fetchall()
         return [self._to_job(row) for row in rows]
 
+    def list_by_run_signatures(self, signatures: Iterable[str]) -> list[Job]:
+        unique = tuple(dict.fromkeys(str(signature) for signature in signatures))
+        if not unique:
+            return []
+        placeholders = ", ".join("?" for _ in unique)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT * FROM jobs WHERE run_signature IN ({placeholders}) "
+                "ORDER BY id DESC",
+                unique,
+            ).fetchall()
+        return [self._to_job(row) for row in rows]
+
     def counts(self) -> dict[str, int]:
         counts = {status.value: 0 for status in JobStatus}
         with self._connect() as connection:
@@ -398,6 +435,9 @@ class JobStore:
 
     @staticmethod
     def _to_job(row: sqlite3.Row) -> Job:
+        run_context = json.loads(row["run_context"] or "{}")
+        if not isinstance(run_context, dict):
+            run_context = {}
         return Job(
             id=int(row["id"]),
             batch_name=str(row["batch_name"]),
@@ -412,4 +452,6 @@ class JobStore:
             created_at=str(row["created_at"]),
             started_at=row["started_at"],
             finished_at=row["finished_at"],
+            run_signature=row["run_signature"],
+            run_context=run_context,
         )

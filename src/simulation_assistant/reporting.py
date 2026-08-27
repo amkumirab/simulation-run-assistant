@@ -21,6 +21,8 @@ def write_artifacts(
         "adapter": job.adapter,
         "parameters": job.parameters,
         "output_formulas": job.output_formulas,
+        "run_signature": job.run_signature,
+        "run_context": job.run_context,
         "result": result.to_dict(),
     }
     (output_dir / "result.json").write_text(

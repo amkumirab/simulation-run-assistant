@@ -35,6 +35,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - COMSOL Plot Group discovery, viewing, sweep comparison, and portable reports
 - Native parameter-sweep builder with Cartesian preview, sequential execution,
   and runtime estimates based on recent COMSOL runs
+- Duplicate-run preflight with reusable-result detection and new-job-only estimates
 - Safe custom output formulas and comparison across successful simulation states
 - Batch-filtered comparison charts, highest-value highlighting, and CSV export
 - Authorized Telegram command bot and success/failure notifications
@@ -118,6 +119,13 @@ The **Runs** tab also provides persistent **Pause queue**, **Cancel selected**, 
 process; it prevents the next job from starting. Recovery is always explicit so
 an active worker in another terminal is not mistaken for an interrupted run.
 See [`docs/QUEUE_CONTROL.md`](docs/QUEUE_CONTROL.md) for the safe workflow.
+
+Choose **Review plan** before starting or queueing a sweep to detect states that
+already succeeded, are already scheduled, or repeat inside the current request.
+The same preflight runs automatically during submission. You can skip duplicates
+and reuse existing results, run every state again, or return to the workspace.
+See [`docs/RUN_PREFLIGHT.md`](docs/RUN_PREFLIGHT.md) for identity and privacy
+details.
 
 Use the **Workspace profile** controls to save a repeatable local setup. A profile
 remembers the COMSOL executable, MPH model, Study or Job Sequence, timeout, core

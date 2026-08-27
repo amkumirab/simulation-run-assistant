@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -40,6 +40,8 @@ class Job:
     created_at: str
     started_at: str | None
     finished_at: str | None
+    run_signature: str | None = None
+    run_context: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
