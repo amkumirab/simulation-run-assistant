@@ -54,6 +54,11 @@ The check reports:
 - Selected study or job
 - License products required by the MPH model
 
+The native desktop application also provides a duplicate-run preflight before
+queueing. It compares the selected model revision, Study or Job Sequence, Plot
+Groups, formulas, and parameter state with signed jobs already in the database.
+See [Run Preflight](RUN_PREFLIGHT.md) for the matching rules and workflow.
+
 Values can also be provided directly for one check:
 
 ```powershell

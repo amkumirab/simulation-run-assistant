@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.13.0] - 2026-08-26
+
+### Added
+
+- Privacy-safe run signatures for COMSOL model, target, outputs, formulas, and inputs
+- Native Review plan action with new, reusable, scheduled, and repeated-state totals
+- Automatic duplicate preflight before desktop Run now and Queue only actions
+- Skip-and-reuse or run-again choices when duplicate states are detected
+- New-job-only runtime estimates and links to reusable or scheduled job IDs
+- Safe run identity in job details and generated result JSON artifacts
+- Indexed SQLite lookup for matching run signatures
+- Tests for signature stability, model changes, path privacy, persistence, and planning
+
+### Changed
+
+- Desktop sweeps can continue with only states that are not already covered
+- Local dashboard submissions now record compatible run signatures
+- Existing databases gain nullable run identity fields without rewriting old jobs
+- Package version increased to 0.13.0
+
 ## [0.12.0] - 2026-08-25
 
 ### Added

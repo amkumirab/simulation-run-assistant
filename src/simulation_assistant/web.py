@@ -20,6 +20,7 @@ from simulation_assistant.adapters.comsol import (
     discover_comsol_executable,
 )
 from simulation_assistant.notifications import notifier_from_environment
+from simulation_assistant.preflight import build_comsol_run_context
 from simulation_assistant.runner import SimulationRunner
 from simulation_assistant.storage import JobStore
 
@@ -150,6 +151,12 @@ def create_dashboard_server(
                 "comsol",
                 [parameters],
                 output_formulas=output_formulas,
+                run_context=build_comsol_run_context(
+                    config.model_path,
+                    study_tag=config.study_tag,
+                    job_tag=config.job_tag,
+                    plot_tags=config.plot_tags,
+                ),
             )[0]
             if start:
                 summary = _runner(

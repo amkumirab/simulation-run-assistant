@@ -135,6 +135,9 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(job["status"], "queued")
         self.assertEqual(job["adapter"], "comsol")
+        self.assertEqual(len(job["run_signature"]), 64)
+        self.assertEqual(job["run_context"]["model"]["name"], "model.mph")
+        self.assertNotIn(str(self.root), json.dumps(job["run_context"]))
         self.assertEqual(
             job["output_formulas"],
             {

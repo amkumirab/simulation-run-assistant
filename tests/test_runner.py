@@ -23,6 +23,7 @@ class RunnerTests(unittest.TestCase):
             "test-batch",
             "mock-em",
             [{"frequency_ghz": 10, "width_mm": 20}],
+            run_context={"model": {"name": "demo.mph"}},
         )[0]
 
         summary = SimulationRunner(self.store, self.root / "artifacts").run_pending()
@@ -35,6 +36,8 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue((output_dir / "response.svg").exists())
         payload = json.loads((output_dir / "result.json").read_text(encoding="utf-8"))
         self.assertEqual(payload["job_id"], job_id)
+        self.assertEqual(payload["run_signature"], job.run_signature)
+        self.assertEqual(payload["run_context"], {"model": {"name": "demo.mph"}})
 
     def test_failed_job_can_be_retried(self) -> None:
         job_id = self.store.enqueue_batch(

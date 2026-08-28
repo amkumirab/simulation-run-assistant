@@ -55,9 +55,15 @@ class StorageMigrationTests(unittest.TestCase):
                 schema = connection.execute(
                     "SELECT sql FROM sqlite_master WHERE name = 'jobs'"
                 ).fetchone()[0]
+                columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+                }
             finally:
                 connection.close()
             self.assertIn("cancelled", schema)
+            self.assertIn("run_signature", columns)
+            self.assertIn("run_context", columns)
 
 
 if __name__ == "__main__":

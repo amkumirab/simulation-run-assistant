@@ -29,6 +29,11 @@ from simulation_assistant.plot_artifacts import (
     resolve_plot_artifact,
     write_plot_comparison_report,
 )
+from simulation_assistant.preflight import (
+    RunPreflightPlan,
+    build_comsol_run_context,
+    build_preflight_plan,
+)
 from simulation_assistant.profiles import (
     ProfileStore,
     WorkspaceProfile,
@@ -715,6 +720,14 @@ class DesktopApp:
             state="disabled",
         )
         self.run_next_button.pack(side="left", padx=(8, 0))
+        self.review_plan_button = ttk.Button(
+            actions,
+            text="Review plan",
+            style="Secondary.TButton",
+            command=self._review_run_plan,
+            state="disabled",
+        )
+        self.review_plan_button.pack(side="left", padx=(8, 0))
         ttk.Button(
             actions,
             text="Open run queue",
@@ -1559,6 +1572,79 @@ class DesktopApp:
             formulas[name] = expression
         return validate_output_formulas(formulas)
 
+    def _build_run_preflight(
+        self,
+        config: ComsolConfig,
+        parameter_sets: list[dict[str, str]],
+        formulas: dict[str, str],
+    ) -> RunPreflightPlan:
+        context = build_comsol_run_context(
+            config.model_path,
+            study_tag=config.study_tag,
+            job_tag=config.job_tag,
+            plot_tags=config.plot_tags,
+        )
+        initial = build_preflight_plan(
+            parameter_sets,
+            adapter="comsol",
+            output_formulas=formulas,
+            run_context=context,
+            existing_jobs=[],
+        )
+        existing = self.store.list_by_run_signatures(
+            candidate.signature for candidate in initial.requested
+        )
+        return build_preflight_plan(
+            parameter_sets,
+            adapter="comsol",
+            output_formulas=formulas,
+            run_context=context,
+            existing_jobs=existing,
+        )
+
+    def _review_run_plan(self) -> None:
+        try:
+            config = self._require_connected_config()
+            parameter_sets = self._collect_parameter_sets()
+            formulas = self._collect_formulas()
+            plan = self._build_run_preflight(config, parameter_sets, formulas)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Sweep preflight", str(exc), parent=self.root)
+            return
+        messagebox.showinfo(
+            "Sweep preflight",
+            self._preflight_summary(plan),
+            parent=self.root,
+        )
+        self.sweep_summary_var.set(
+            f"{len(plan.new)} new · {plan.duplicate_count} duplicate · "
+            f"{len(plan.requested)} requested"
+        )
+
+    def _preflight_summary(self, plan: RunPreflightPlan) -> str:
+        estimate = estimate_sequential_seconds(
+            len(plan.new),
+            self.store.list(status=JobStatus.SUCCEEDED, limit=20),
+        )
+        lines = [
+            f"Requested states: {len(plan.requested)}",
+            f"New jobs: {len(plan.new)}",
+            f"Reusable successful results: {len(plan.succeeded)}",
+            f"Already queued or running: {len(plan.scheduled)}",
+            f"Repeated inside this request: {len(plan.repeated)}",
+        ]
+        if estimate is not None and plan.new:
+            lines.append(
+                f"Estimated time for new jobs: {self._format_duration(estimate)}"
+            )
+        if plan.successful_job_ids:
+            ids = ", ".join(f"#{job_id}" for job_id in plan.successful_job_ids)
+            lines.append(f"Reusable job IDs: {ids}")
+        if plan.scheduled_job_ids:
+            ids = ", ".join(f"#{job_id}" for job_id in plan.scheduled_job_ids)
+            lines.append(f"Scheduled job IDs: {ids}")
+        return "\n".join(lines)
+
     def submit_run(self, *, start: bool) -> None:
         try:
             config = self._require_connected_config()
@@ -1566,14 +1652,39 @@ class DesktopApp:
                 raise ValueError("Run queue is paused. Resume it before starting jobs")
             parameter_sets = self._collect_parameter_sets()
             formulas = self._collect_formulas()
+            plan = self._build_run_preflight(config, parameter_sets, formulas)
             batch_name = self.batch_var.get().strip()
             if not batch_name:
                 raise ValueError("Run label cannot be empty")
-            if len(parameter_sets) >= 25:
+            candidates = list(plan.requested)
+            skipped_duplicates = False
+            if plan.has_duplicates:
+                choice = messagebox.askyesnocancel(
+                    "Duplicate runs detected",
+                    self._preflight_summary(plan)
+                    + "\n\nYes: skip duplicates and reuse successful results"
+                    + "\nNo: run every requested state again"
+                    + "\nCancel: return to the workspace",
+                    parent=self.root,
+                )
+                if choice is None:
+                    return
+                if choice:
+                    candidates = list(plan.new)
+                    skipped_duplicates = True
+            if not candidates:
+                self.refresh_jobs()
+                self.activity_var.set(
+                    "No new jobs were added. Existing results and scheduled runs cover the plan."
+                )
+                self.notebook.select(1)
+                return
+            if len(candidates) >= 25:
                 action = "run" if start else "queue"
                 confirmed = messagebox.askyesno(
                     "Confirm parameter sweep",
-                    f"This will {action} {len(parameter_sets)} COMSOL jobs sequentially. Continue?",
+                    f"This will {action} {len(candidates)} new COMSOL jobs "
+                    "sequentially. Continue?",
                     parent=self.root,
                 )
                 if not confirmed:
@@ -1581,8 +1692,9 @@ class DesktopApp:
             job_ids = self.store.enqueue_batch(
                 batch_name,
                 "comsol",
-                parameter_sets,
+                [candidate.parameters for candidate in candidates],
                 output_formulas=formulas,
+                run_context=plan.run_context,
             )
         except (OSError, ValueError) as exc:
             messagebox.showerror("Run setup", str(exc), parent=self.root)
@@ -1590,11 +1702,19 @@ class DesktopApp:
 
         self.refresh_jobs()
         if not start:
+            duplicate_note = (
+                f" {plan.duplicate_count} duplicate state(s) were skipped."
+                if skipped_duplicates
+                else ""
+            )
             if len(job_ids) == 1:
-                self.activity_var.set(f"Job #{job_ids[0]} was added to the local queue.")
+                self.activity_var.set(
+                    f"Job #{job_ids[0]} was added to the local queue.{duplicate_note}"
+                )
             else:
                 self.activity_var.set(
                     f"{len(job_ids)} sweep jobs were added to the local queue."
+                    f"{duplicate_note}"
                 )
             return
         if len(job_ids) == 1:
@@ -1675,6 +1795,26 @@ class DesktopApp:
         self.refresh_jobs()
         self.refresh_comparison()
         metadata = (job.result or {}).get("metadata", {})
+        identity_model = job.run_context.get("model", {})
+        if not isinstance(identity_model, dict):
+            identity_model = {}
+        identity_target = job.run_context.get("target", {})
+        if not isinstance(identity_target, dict):
+            identity_target = {}
+        identity_plots = job.run_context.get("plot_tags", [])
+        if not isinstance(identity_plots, list):
+            identity_plots = []
+        identity_values = {
+            "signature": job.run_signature or "Not recorded",
+            "model": identity_model.get("name", "Not recorded"),
+            "model_size_bytes": identity_model.get("size_bytes", ""),
+            "target": (
+                f"{identity_target.get('kind', '')}: {identity_target.get('tag', '')}"
+                if identity_target
+                else "Not recorded"
+            ),
+            "plot_groups": ", ".join(str(tag) for tag in identity_plots),
+        }
         formula_errors = metadata.get("formula_errors", {})
         plot_errors = metadata.get("plot_export_errors", {})
         if job.status == JobStatus.SUCCEEDED and (formula_errors or plot_errors):
@@ -1862,6 +2002,7 @@ class DesktopApp:
                     "finished_at": job.finished_at or "",
                 },
             ),
+            ("Run identity", identity_values),
             ("Inputs", job.parameters),
             ("Formulas", job.output_formulas),
             ("Metrics", (job.result or {}).get("metrics", {})),
@@ -2574,6 +2715,7 @@ class DesktopApp:
         self.run_now_button.configure(state=run_state)
         self.queue_button.configure(state=state)
         self.run_next_button.configure(state=run_state)
+        self.review_plan_button.configure(state=state)
         self._update_queue_controls()
 
     def _run_background(
