@@ -16,6 +16,7 @@ from simulation_assistant.adapters.comsol import (
     inspect_mph,
     validate_plot_selection,
 )
+from simulation_assistant.adapters.base import SimulationCancelled
 
 
 class FakeComsolProcess:
@@ -145,6 +146,29 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(result.metadata["plot_exports"][0]["tag"], "pg1")
         self.assertTrue(Path(result.metadata["plot_exports"][0]["path"]).is_file())
         self.assertEqual(len(fake_process.commands), 3)
+
+    def test_uses_cancellable_runner_for_an_active_queue_job(self) -> None:
+        checks = iter([False, True])
+
+        def cancel_requested():
+            return next(checks)
+
+        def stopped_process(command, **kwargs):
+            self.assertTrue(kwargs["cancel_requested"]())
+            raise SimulationCancelled("Stop requested by user")
+
+        adapter = ComsolAdapter(
+            self.config(),
+            FakeComsolProcess(),
+            cancellable_process_runner=stopped_process,
+        )
+
+        with self.assertRaisesRegex(SimulationCancelled, "Stop requested"):
+            adapter.run(
+                {"frequency": "90[kHz]"},
+                work_dir=self.root / "stopped-job",
+                cancel_requested=cancel_requested,
+            )
 
     def test_study_run_does_not_present_saved_tables_as_fresh(self) -> None:
         result = ComsolAdapter(self.config(), FakeComsolProcess()).run(

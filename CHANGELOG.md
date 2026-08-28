@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.14.0] - 2026-08-28
+
+### Added
+
+- Persistent stop requests for running jobs across desktop, CLI, dashboard, and Telegram
+- Cancellable child-process supervision for COMSOL batch solves and plot exports
+- Live `stopping` state in native and web queue views
+- Dedicated stopped-run totals in worker summaries
+- CLI `stop JOB_ID`, dashboard action, and authorized Telegram `/stop ID` command
+- Responsive Telegram polling while its bounded queue worker is active
+- Tests for process termination, timeout handling, storage, runner, API, and bot controls
+
+### Changed
+
+- Running jobs now transition cleanly to `cancelled` after an acknowledged stop
+- Retry and interrupted-run recovery clear previous stop requests
+- Existing databases gain a nullable stop-request timestamp automatically
+- Profile recency ordering remains deterministic when timestamps are identical
+- Package version increased to 0.14.0
+
 ## [0.13.0] - 2026-08-26
 
 ### Added

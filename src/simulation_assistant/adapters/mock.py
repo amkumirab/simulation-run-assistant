@@ -3,9 +3,9 @@ from __future__ import annotations
 import math
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from simulation_assistant.adapters.base import SimulationAdapter
+from simulation_assistant.adapters.base import SimulationAdapter, SimulationCancelled
 from simulation_assistant.types import SimulationResult
 
 
@@ -19,7 +19,10 @@ class MockElectromagneticAdapter(SimulationAdapter):
         parameters: dict[str, Any],
         *,
         work_dir: Path | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> SimulationResult:
+        if cancel_requested and cancel_requested():
+            raise SimulationCancelled("Stop requested by user")
         if parameters.get("force_failure"):
             raise RuntimeError("Intentional demo failure requested by force_failure")
 
@@ -56,6 +59,8 @@ class MockElectromagneticAdapter(SimulationAdapter):
         delay_ms = min(max(float(parameters.get("demo_delay_ms", 0)), 0), 500)
         if delay_ms:
             time.sleep(delay_ms / 1000)
+        if cancel_requested and cancel_requested():
+            raise SimulationCancelled("Stop requested by user")
 
         return SimulationResult(
             metrics={

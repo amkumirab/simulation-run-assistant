@@ -5,7 +5,7 @@ import os
 import re
 import tempfile
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -182,7 +182,15 @@ class ProfileStore:
 
     def list(self) -> list[WorkspaceProfile]:
         profiles, _last_profile = self._read()
-        return sorted(profiles, key=lambda profile: profile.updated_at, reverse=True)
+        indexed_profiles = enumerate(profiles)
+        return [
+            profile
+            for _index, profile in sorted(
+                indexed_profiles,
+                key=lambda item: (item[1].updated_at, item[0]),
+                reverse=True,
+            )
+        ]
 
     def get(self, name: str) -> WorkspaceProfile:
         profiles, _last_profile = self._read()
@@ -199,7 +207,7 @@ class ProfileStore:
             for existing in profiles
             if existing.name.casefold() != profile.name.casefold()
         ]
-        refreshed = replace(profile, updated_at=_utc_now())
+        refreshed = replace(profile, updated_at=_next_updated_at(profiles))
         profiles.append(refreshed)
         self._write(profiles, refreshed.name if set_last else last_profile)
 
@@ -240,8 +248,9 @@ class ProfileStore:
             if match is None:
                 raise KeyError(f"Workspace profile '{name}' was not found")
             name = match.name
+            next_updated_at = _next_updated_at(profiles)
             profiles = [
-                replace(profile, updated_at=_utc_now())
+                replace(profile, updated_at=next_updated_at)
                 if profile.name.casefold() == name.casefold()
                 else profile
                 for profile in profiles
@@ -319,6 +328,20 @@ def _find_profile(
         (profile for profile in profiles if profile.name.casefold() == normalized),
         None,
     )
+
+
+def _next_updated_at(profiles: list[WorkspaceProfile]) -> str:
+    now = datetime.now(timezone.utc)
+    existing = []
+    for profile in profiles:
+        try:
+            parsed = datetime.fromisoformat(profile.updated_at)
+        except ValueError:
+            continue
+        existing.append(parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc))
+    if existing and now <= max(existing):
+        now = max(existing) + timedelta(microseconds=1)
+    return now.isoformat(timespec="microseconds")
 
 
 def sanitized_profile_template(profile: WorkspaceProfile) -> dict[str, Any]:

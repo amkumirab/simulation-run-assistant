@@ -5,6 +5,10 @@ from enum import Enum
 from typing import Any
 
 
+class SimulationCancelled(RuntimeError):
+    """Raised when a user-requested stop interrupts an active simulation."""
+
+
 class JobStatus(str, Enum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -42,6 +46,7 @@ class Job:
     finished_at: str | None
     run_signature: str | None = None
     run_context: dict[str, Any] = field(default_factory=dict)
+    stop_requested_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

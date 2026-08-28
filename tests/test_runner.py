@@ -1,8 +1,11 @@
 import json
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
+from simulation_assistant.adapters.base import SimulationCancelled
 from simulation_assistant.runner import SimulationRunner
 from simulation_assistant.storage import JobStore
 from simulation_assistant.types import JobStatus
@@ -108,7 +111,52 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(cancelled.error, "Cancelled before execution")
         self.assertIsNotNone(cancelled.finished_at)
         self.store.retry(job_id)
-        self.assertEqual(self.store.get(job_id).status, JobStatus.QUEUED)
+        retried = self.store.get(job_id)
+        self.assertEqual(retried.status, JobStatus.QUEUED)
+        self.assertIsNone(retried.stop_requested_at)
+
+    def test_stop_request_cancels_an_active_adapter_run(self) -> None:
+        job_id = self.store.enqueue_batch("active", "stop-test", [{"x": 1}])[0]
+
+        class StopAdapter:
+            name = "stop-test"
+
+            def run(self, parameters, *, work_dir=None, cancel_requested=None):
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    if cancel_requested and cancel_requested():
+                        raise SimulationCancelled("Stop requested by user")
+                    time.sleep(0.01)
+                raise AssertionError("The external stop request was not observed")
+
+        runner = SimulationRunner(
+            self.store,
+            self.root / "artifacts",
+            adapters=[StopAdapter()],
+        )
+        summaries = []
+        worker = threading.Thread(
+            target=lambda: summaries.append(runner.run_job(job_id)),
+            daemon=True,
+        )
+        worker.start()
+        deadline = time.monotonic() + 2
+        while self.store.get(job_id).status != JobStatus.RUNNING:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.01)
+
+        self.store.request_stop(job_id)
+        worker.join(timeout=2)
+
+        job = self.store.get(job_id)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(summaries[0].cancelled, 1)
+        self.assertEqual(summaries[0].failed, 0)
+        self.assertEqual(job.status, JobStatus.CANCELLED)
+        self.assertIsNotNone(job.stop_requested_at)
+        self.assertEqual(job.error, "Stop requested by user")
+        self.store.retry(job_id)
+        self.assertIsNone(self.store.get(job_id).stop_requested_at)
 
     def test_recovers_interrupted_jobs_to_queue_or_failure(self) -> None:
         first_id, second_id = self.store.enqueue_batch(
@@ -118,11 +166,13 @@ class RunnerTests(unittest.TestCase):
         )
         self.store.claim(first_id)
         self.store.claim(second_id)
+        self.store.request_stop(first_id)
 
         recovered = self.store.recover_interrupted(requeue=True)
 
         self.assertEqual(recovered, [first_id, second_id])
         self.assertEqual(self.store.get(first_id).status, JobStatus.QUEUED)
+        self.assertIsNone(self.store.get(first_id).stop_requested_at)
         self.assertEqual(self.store.get(first_id).attempts, 1)
         self.store.claim(first_id)
         failed = self.store.recover_interrupted(requeue=False)

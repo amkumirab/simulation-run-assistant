@@ -118,13 +118,16 @@ Keep this process running. Stop it with `Ctrl+C`. Available commands:
 /run [limit]     Process 1 to 10 queued jobs; default is 1
 /retry ID        Return a failed or cancelled job to the queue
 /cancel ID       Cancel one queued job
+/stop ID         Request a stop for one running job
 /pause           Pause new queue claims
 /resume          Resume queue processing
 /help            Show command help
 ```
 
 The default `/run` limit is intentionally one so an accidental command cannot
-start an unlimited batch.
+start an unlimited batch. Queue work runs in a background thread so the bot can
+receive `/stop ID` while that job is active. A second `/run` command is rejected
+until the current Telegram worker finishes.
 
 Wait for a startup message similar to this before testing commands in Telegram:
 
