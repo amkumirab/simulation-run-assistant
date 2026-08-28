@@ -47,7 +47,8 @@ class JobStore:
                     attempts INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     started_at TEXT,
-                    finished_at TEXT
+                    finished_at TEXT,
+                    stop_requested_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_jobs_status_id ON jobs(status, id);
                 CREATE TABLE IF NOT EXISTS queue_settings (
@@ -73,6 +74,8 @@ class JobStore:
                 connection.execute(
                     "ALTER TABLE jobs ADD COLUMN run_context TEXT NOT NULL DEFAULT '{}'"
                 )
+            if "stop_requested_at" not in columns:
+                connection.execute("ALTER TABLE jobs ADD COLUMN stop_requested_at TEXT")
             schema = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
             ).fetchone()
@@ -108,17 +111,18 @@ class JobStore:
                 attempts INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 started_at TEXT,
-                finished_at TEXT
+                finished_at TEXT,
+                stop_requested_at TEXT
             );
             INSERT INTO jobs(
                 id, batch_name, adapter, status, parameters, output_formulas,
                 run_signature, run_context, result, error, artifact_dir, attempts,
-                created_at, started_at, finished_at
+                created_at, started_at, finished_at, stop_requested_at
             )
             SELECT
                 id, batch_name, adapter, status, parameters, output_formulas,
                 run_signature, run_context, result, error, artifact_dir, attempts,
-                created_at, started_at, finished_at
+                created_at, started_at, finished_at, stop_requested_at
             FROM jobs_before_status_migration;
             DROP TABLE jobs_before_status_migration;
             CREATE INDEX idx_jobs_status_id ON jobs(status, id);
@@ -195,7 +199,8 @@ class JobStore:
                 """
                 UPDATE jobs
                 SET status = ?, started_at = ?, finished_at = NULL,
-                    error = NULL, attempts = attempts + 1
+                    error = NULL, stop_requested_at = NULL,
+                    attempts = attempts + 1
                 WHERE id = ?
                 """,
                 (JobStatus.RUNNING.value, started_at, row["id"]),
@@ -221,7 +226,8 @@ class JobStore:
                 """
                 UPDATE jobs
                 SET status = ?, started_at = ?, finished_at = NULL,
-                    error = NULL, attempts = attempts + 1
+                    error = NULL, stop_requested_at = NULL,
+                    attempts = attempts + 1
                 WHERE id = ?
                 """,
                 (JobStatus.RUNNING.value, utc_now(), job_id),
@@ -274,13 +280,58 @@ class JobStore:
             if cursor.rowcount != 1:
                 raise RuntimeError(f"Job {job_id} is not running")
 
+    def request_stop(self, job_id: int) -> None:
+        """Persist a stop request for a currently running job."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET stop_requested_at = COALESCE(stop_requested_at, ?)
+                WHERE id = ? AND status = ?
+                """,
+                (utc_now(), job_id, JobStatus.RUNNING.value),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"Job {job_id} does not exist or is not running")
+
+    def is_stop_requested(self, job_id: int) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT status, stop_requested_at FROM jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+        return bool(
+            row is not None
+            and row["status"] == JobStatus.RUNNING.value
+            and row["stop_requested_at"]
+        )
+
+    def mark_cancelled(self, job_id: int, reason: str = "Stopped by user") -> None:
+        """Finish a running job after its adapter acknowledges a stop request."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET status = ?, error = ?, finished_at = ?
+                WHERE id = ? AND status = ?
+                """,
+                (
+                    JobStatus.CANCELLED.value,
+                    reason[:4000],
+                    utc_now(),
+                    job_id,
+                    JobStatus.RUNNING.value,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError(f"Job {job_id} is not running")
+
     def retry(self, job_id: int) -> None:
         with self._connect() as connection:
             cursor = connection.execute(
                 """
                 UPDATE jobs
                 SET status = ?, error = NULL, result = NULL, artifact_dir = NULL,
-                    started_at = NULL, finished_at = NULL
+                    started_at = NULL, finished_at = NULL, stop_requested_at = NULL
                 WHERE id = ? AND status IN (?, ?)
                 """,
                 (
@@ -301,12 +352,13 @@ class JobStore:
             cursor = connection.execute(
                 """
                 UPDATE jobs
-                SET status = ?, error = ?, finished_at = ?
+                SET status = ?, error = ?, finished_at = ?, stop_requested_at = ?
                 WHERE id = ? AND status = ?
                 """,
                 (
                     JobStatus.CANCELLED.value,
                     "Cancelled before execution",
+                    utc_now(),
                     utc_now(),
                     job_id,
                     JobStatus.QUEUED.value,
@@ -346,7 +398,8 @@ class JobStore:
                     """
                     UPDATE jobs
                     SET status = ?, error = NULL, result = NULL, artifact_dir = NULL,
-                        started_at = NULL, finished_at = NULL
+                        started_at = NULL, finished_at = NULL,
+                        stop_requested_at = NULL
                     WHERE status = ?
                     """,
                     (JobStatus.QUEUED.value, JobStatus.RUNNING.value),
@@ -454,4 +507,5 @@ class JobStore:
             finished_at=row["finished_at"],
             run_signature=row["run_signature"],
             run_context=run_context,
+            stop_requested_at=row["stop_requested_at"],
         )

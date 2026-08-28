@@ -62,9 +62,25 @@ sim-assistant recover --fail
 Requeueing preserves the attempt count so the run history remains accurate.
 Both recovery paths keep existing job records instead of deleting them.
 
-## Active COMSOL runs
+## Stop an active COMSOL run
 
-Pause and cancel controls do not terminate an active COMSOL process. Avoid using
-interrupted-run recovery while COMSOL or another queue worker is still running.
-If an active process must be stopped, close it using COMSOL or the operating
-system first, verify that it has exited, and then use the recovery workflow.
+Select a running job in the desktop **Runs** tab and choose **Stop selected**, or
+request the stop from another terminal:
+
+```powershell
+sim-assistant stop JOB_ID
+```
+
+The local dashboard job dialog and the authorized Telegram `/stop ID` command
+provide the same control. The request is stored in SQLite, so the worker that owns
+the job sees it even when the request came from another local process. The row is
+shown as `stopping` while the worker terminates its exact solver child process.
+
+After the process exits, the job becomes `cancelled` and remains available for
+inspection or requeueing. A stop never deletes the input copy, solver log, or any
+partial files already written to the job artifact directory. It also does not
+affect other COMSOL sessions that were not started for that job.
+
+The stop callback is checked during the main batch solve and COMSOL plot export.
+If a worker is no longer alive, no process can acknowledge the request; use the
+interrupted-run recovery workflow instead.

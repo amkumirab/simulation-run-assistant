@@ -1,4 +1,5 @@
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -94,9 +95,16 @@ class TelegramBotTests(unittest.TestCase):
         ):
             response = self.send("/run 1")
 
-        self.assertIn("Processed 1: 1 succeeded", response or "")
+        deadline = time.monotonic() + 2
+        while self.store.get(first).status in {JobStatus.QUEUED, JobStatus.RUNNING}:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.01)
+        self.assertIn("Queue worker started", response or "")
         self.assertEqual(self.store.get(first).status, JobStatus.SUCCEEDED)
         self.assertEqual(self.store.get(second).status, JobStatus.QUEUED)
+        self.assertTrue(
+            any("Processed 1: 1 succeeded" in message for _chat, message in self.api.sent)
+        )
 
     def test_retry_requeues_failed_job(self) -> None:
         job_id = self.store.enqueue_batch("demo", "mock-em", [{"x": 1}])[0]
@@ -107,6 +115,40 @@ class TelegramBotTests(unittest.TestCase):
 
         self.assertIn("returned to the queue", response or "")
         self.assertEqual(self.store.get(job_id).status, JobStatus.QUEUED)
+
+    def test_requests_a_stop_for_a_running_job(self) -> None:
+        job_id = self.store.enqueue_batch("active", "mock-em", [{"x": 1}])[0]
+        self.store.claim(job_id)
+
+        response = self.send(f"/stop {job_id}")
+
+        self.assertIn("Stop requested", response or "")
+        self.assertTrue(self.store.is_stop_requested(job_id))
+
+    def test_bot_can_stop_its_own_background_worker(self) -> None:
+        job_id = self.store.enqueue_batch(
+            "active-bot",
+            "mock-em",
+            [{"demo_delay_ms": 500}],
+        )[0]
+
+        with patch(
+            "simulation_assistant.telegram_bot.TelegramNotifier",
+            return_value=NullNotifier(),
+        ):
+            started = self.send("/run 1")
+            deadline = time.monotonic() + 2
+            while self.store.get(job_id).status != JobStatus.RUNNING:
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.01)
+            stopped = self.send(f"/stop {job_id}")
+            while self.store.get(job_id).status == JobStatus.RUNNING:
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.01)
+
+        self.assertIn("Queue worker started", started or "")
+        self.assertIn("Stop requested", stopped or "")
+        self.assertEqual(self.store.get(job_id).status, JobStatus.CANCELLED)
 
     def test_discovers_chat_id_from_recent_message(self) -> None:
         self.api.updates = [

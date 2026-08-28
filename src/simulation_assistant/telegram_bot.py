@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 from typing import Any, Protocol
@@ -36,6 +37,7 @@ COMMANDS = [
     {"command": "run", "description": "Process queued jobs"},
     {"command": "retry", "description": "Requeue a failed or cancelled job"},
     {"command": "cancel", "description": "Cancel one queued job"},
+    {"command": "stop", "description": "Stop one running job"},
     {"command": "pause", "description": "Pause new queue claims"},
     {"command": "resume", "description": "Resume queue processing"},
     {"command": "help", "description": "Show available commands"},
@@ -55,6 +57,7 @@ HELP_TEXT = """Simulation Run Assistant
 /run [limit] - process queued jobs (default limit: 1, maximum: 10)
 /retry ID - return a failed or cancelled job to the queue
 /cancel ID - cancel one queued job
+/stop ID - request a stop for one running job
 /pause - pause new queue claims
 /resume - resume queue processing
 /help - show this message
@@ -74,6 +77,7 @@ class TelegramBotController:
         self.store = store
         self.artifact_root = Path(artifact_root)
         self.allowed_chat_id = str(allowed_chat_id)
+        self._worker_lock = threading.Lock()
 
     def handle_update(self, update: dict[str, Any]) -> None:
         message = update.get("message")
@@ -143,18 +147,27 @@ class TelegramBotController:
             if self.store.is_queue_paused():
                 return "Queue is paused. Use /resume before processing jobs."
             limit = _optional_limit(arguments, default=1)
-            summary = SimulationRunner(
+            if not self._worker_lock.acquire(blocking=False):
+                return "A Telegram queue worker is already active."
+            runner = SimulationRunner(
                 store=self.store,
                 artifact_root=self.artifact_root,
                 notifier=TelegramNotifier(
                     token=self.api.token,
                     chat_id=self.allowed_chat_id,
                 ),
-            ).run_pending(limit=limit)
-            return (
-                f"Processed {summary.processed}: "
-                f"{summary.succeeded} succeeded, {summary.failed} failed."
             )
+            worker = threading.Thread(
+                target=self._run_worker,
+                args=(runner, limit),
+                daemon=True,
+            )
+            try:
+                worker.start()
+            except Exception:
+                self._worker_lock.release()
+                raise
+            return f"Queue worker started for up to {limit} job(s)."
         if command == "/retry":
             job_id = _required_job_id(arguments)
             self.store.retry(job_id)
@@ -163,6 +176,10 @@ class TelegramBotController:
             job_id = _required_job_id(arguments)
             self.store.cancel(job_id)
             return f"Job #{job_id} was cancelled."
+        if command == "/stop":
+            job_id = _required_job_id(arguments)
+            self.store.request_stop(job_id)
+            return f"Stop requested for running Job #{job_id}."
         if command == "/pause":
             self.store.set_queue_paused(True)
             return "Queue paused. A running job will finish normally."
@@ -170,6 +187,20 @@ class TelegramBotController:
             self.store.set_queue_paused(False)
             return "Queue resumed."
         return "Unknown command. Use /help to see available commands."
+
+    def _run_worker(self, runner: SimulationRunner, limit: int) -> None:
+        try:
+            summary = runner.run_pending(limit=limit)
+            response = (
+                f"Processed {summary.processed}: "
+                f"{summary.succeeded} succeeded, {summary.failed} failed, "
+                f"{summary.cancelled} stopped."
+            )
+        except (KeyError, OSError, RuntimeError, ValueError) as exc:
+            response = f"Queue worker failed: {exc}"
+        finally:
+            self._worker_lock.release()
+        self.api.send_message(self.allowed_chat_id, response)
 
 
 def run_bot(

@@ -15,11 +15,13 @@ from pathlib import Path
 from typing import Any, Callable
 from xml.etree import ElementTree
 
-from simulation_assistant.adapters.base import SimulationAdapter
+from simulation_assistant.adapters.base import SimulationAdapter, SimulationCancelled
+from simulation_assistant.process_control import run_cancellable_process
 from simulation_assistant.types import SimulationResult
 
 
 ProcessRunner = Callable[..., subprocess.CompletedProcess[str]]
+CancellableProcessRunner = Callable[..., subprocess.CompletedProcess[str]]
 PARAMETER_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 FEATURE_TAG = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MAX_SELECTED_PLOTS = 12
@@ -161,16 +163,20 @@ class ComsolAdapter(SimulationAdapter):
         self,
         config: ComsolConfig | None = None,
         process_runner: ProcessRunner = subprocess.run,
+        cancellable_process_runner: CancellableProcessRunner = run_cancellable_process,
     ) -> None:
         self.config = config
         self.process_runner = process_runner
+        self.cancellable_process_runner = cancellable_process_runner
 
     def run(
         self,
         parameters: dict[str, Any],
         *,
         work_dir: Path | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> SimulationResult:
+        _raise_if_cancelled(cancel_requested)
         config = self.config or ComsolConfig.from_environment()
         config.validate()
         model_info = inspect_mph(config.model_path)
@@ -195,14 +201,22 @@ class ComsolAdapter(SimulationAdapter):
         )
         started = time.monotonic()
         try:
-            completed = self.process_runner(
-                command,
-                cwd=work_dir,
-                capture_output=True,
-                text=True,
-                timeout=config.timeout_seconds + 60,
-                check=False,
-            )
+            if cancel_requested is None:
+                completed = self.process_runner(
+                    command,
+                    cwd=work_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=config.timeout_seconds + 60,
+                    check=False,
+                )
+            else:
+                completed = self.cancellable_process_runner(
+                    command,
+                    cwd=work_dir,
+                    timeout=config.timeout_seconds + 60,
+                    cancel_requested=cancel_requested,
+                )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(
                 f"COMSOL exceeded the {config.timeout_seconds}-second timeout"
@@ -218,6 +232,7 @@ class ComsolAdapter(SimulationAdapter):
         if not output_model.is_file():
             raise RuntimeError("COMSOL completed without creating output.mph")
 
+        _raise_if_cancelled(cancel_requested)
         tables = extract_mph_tables(output_model)
         tables_are_fresh = config.job_tag is not None
         metrics = _table_metrics(tables) if tables_are_fresh else {}
@@ -233,6 +248,8 @@ class ComsolAdapter(SimulationAdapter):
                 selected_plots=selected_plots,
                 work_dir=work_dir,
                 process_runner=self.process_runner,
+                cancellable_process_runner=self.cancellable_process_runner,
+                cancel_requested=cancel_requested,
             )
         except OSError as exc:
             plot_export_metadata = {
@@ -244,6 +261,7 @@ class ComsolAdapter(SimulationAdapter):
                 },
                 "plot_export_log": None,
             }
+        _raise_if_cancelled(cancel_requested)
         return SimulationResult(
             metrics=metrics,
             series=series,
@@ -444,6 +462,8 @@ def _export_selected_plots(
     selected_plots: list[dict[str, str]],
     work_dir: Path,
     process_runner: ProcessRunner,
+    cancellable_process_runner: CancellableProcessRunner,
+    cancel_requested: Callable[[], bool] | None,
 ) -> dict[str, Any]:
     if not selected_plots:
         return {
@@ -514,14 +534,22 @@ def _export_selected_plots(
         command.extend([plot["tag"], str(output_path.resolve())])
 
     try:
-        completed = process_runner(
-            command,
-            cwd=support_dir,
-            capture_output=True,
-            text=True,
-            timeout=config.timeout_seconds + 60,
-            check=False,
-        )
+        if cancel_requested is None:
+            completed = process_runner(
+                command,
+                cwd=support_dir,
+                capture_output=True,
+                text=True,
+                timeout=config.timeout_seconds + 60,
+                check=False,
+            )
+        else:
+            completed = cancellable_process_runner(
+                command,
+                cwd=support_dir,
+                timeout=config.timeout_seconds + 60,
+                cancel_requested=cancel_requested,
+            )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return _failed_plot_exports(
             requested,
@@ -572,6 +600,11 @@ def _export_selected_plots(
             str(export_log.resolve()) if export_log.is_file() else None
         ),
     }
+
+
+def _raise_if_cancelled(cancel_requested: Callable[[], bool] | None) -> None:
+    if cancel_requested and cancel_requested():
+        raise SimulationCancelled("Stop requested by user")
 
 
 def _find_comsol_compiler(executable: Path) -> Path | None:

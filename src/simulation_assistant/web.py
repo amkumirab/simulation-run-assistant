@@ -27,6 +27,7 @@ from simulation_assistant.storage import JobStore
 
 JOB_PATH = re.compile(r"^/api/jobs/(\d+)$")
 RETRY_PATH = re.compile(r"^/api/jobs/(\d+)/retry$")
+STOP_PATH = re.compile(r"^/api/jobs/(\d+)/stop$")
 MAX_REQUEST_BYTES = 64 * 1024
 ComsolChecker = Callable[[ComsolConfig], dict[str, Any]]
 
@@ -112,6 +113,12 @@ def create_dashboard_server(
                     job_id = int(match.group(1))
                     store.retry(job_id)
                     self._json(HTTPStatus.OK, store.get(job_id).to_dict())
+                    return
+                match = STOP_PATH.match(path)
+                if match:
+                    job_id = int(match.group(1))
+                    store.request_stop(job_id)
+                    self._json(HTTPStatus.ACCEPTED, store.get(job_id).to_dict())
                     return
                 self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
             except KeyError as exc:
@@ -344,6 +351,7 @@ def _summary_payload(summary: Any) -> dict[str, int]:
         "processed": summary.processed,
         "succeeded": summary.succeeded,
         "failed": summary.failed,
+        "cancelled": summary.cancelled,
     }
 
 

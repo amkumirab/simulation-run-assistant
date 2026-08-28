@@ -186,6 +186,23 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(payload["processed"], 0)
         self.assertTrue(payload["queue_paused"])
 
+    def test_requests_a_stop_for_a_running_job(self) -> None:
+        store = JobStore(self.root / "jobs.db")
+        job_id = store.enqueue_batch("active-web", "comsol", [{"x": 1}])[0]
+        store.claim(job_id)
+
+        status, _, body = self.request(
+            "POST",
+            f"/api/jobs/{job_id}/stop",
+            {},
+            token=self.token,
+        )
+
+        payload = json.loads(body)
+        self.assertEqual(status, 202)
+        self.assertEqual(payload["status"], "running")
+        self.assertIsNotNone(payload["stop_requested_at"])
+
     def test_refuses_non_local_bindings(self) -> None:
         with self.assertRaisesRegex(ValueError, "loopback"):
             create_dashboard_server(

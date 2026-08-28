@@ -1734,13 +1734,19 @@ class DesktopApp:
     def _run_job_ids(runner: SimulationRunner, job_ids: list[int]) -> dict[str, int]:
         succeeded = 0
         failed = 0
+        cancelled = 0
         for job_id in job_ids:
             if runner.store.is_queue_paused():
                 break
             summary = runner.run_job(job_id)
             succeeded += summary.succeeded
             failed += summary.failed
-        return {"succeeded": succeeded, "failed": failed}
+            cancelled += summary.cancelled
+        return {
+            "succeeded": succeeded,
+            "failed": failed,
+            "cancelled": cancelled,
+        }
 
     def _submitted_jobs_finished(
         self,
@@ -1753,10 +1759,12 @@ class DesktopApp:
         self.refresh_jobs()
         self.refresh_comparison()
         self.activity_var.set(
-            f"Sweep finished: {summary['succeeded']} succeeded, {summary['failed']} failed."
+            f"Sweep finished: {summary['succeeded']} succeeded, "
+            f"{summary['failed']} failed, {summary['cancelled']} stopped."
         )
-        if summary["succeeded"] + summary["failed"] < len(job_ids):
-            remaining = len(job_ids) - summary["succeeded"] - summary["failed"]
+        processed = summary["succeeded"] + summary["failed"] + summary["cancelled"]
+        if processed < len(job_ids):
+            remaining = len(job_ids) - processed
             self.activity_var.set(
                 f"Sweep paused with {remaining} job(s) still in the queue."
             )
@@ -1832,7 +1840,7 @@ class DesktopApp:
         if summary.processed:
             self.activity_var.set(
                 f"Queue worker finished: {summary.succeeded} succeeded, "
-                f"{summary.failed} failed."
+                f"{summary.failed} failed, {summary.cancelled} stopped."
             )
         else:
             self.activity_var.set("The run queue is empty.")
@@ -1842,6 +1850,11 @@ class DesktopApp:
             return
         self.jobs_tree.delete(*self.jobs_tree.get_children())
         for job in self.store.list(limit=100):
+            status_label = (
+                "stopping"
+                if job.status == JobStatus.RUNNING and job.stop_requested_at
+                else job.status.value
+            )
             self.jobs_tree.insert(
                 "",
                 "end",
@@ -1849,7 +1862,7 @@ class DesktopApp:
                 values=(
                     f"#{job.id}",
                     job.batch_name,
-                    job.status.value,
+                    status_label,
                     job.adapter,
                     job.attempts,
                     job.created_at.replace("T", " "),
@@ -1882,16 +1895,24 @@ class DesktopApp:
         if not hasattr(self, "cancel_job_button"):
             return
         selection = self.jobs_tree.selection()
-        can_cancel = False
+        button_state = "disabled"
+        button_text = "Cancel selected"
         if selection:
             try:
-                can_cancel = (
-                    self.store.get(int(selection[0])).status == JobStatus.QUEUED
-                )
+                job = self.store.get(int(selection[0]))
+                if job.status == JobStatus.QUEUED:
+                    button_state = "normal"
+                elif job.status == JobStatus.RUNNING:
+                    button_text = (
+                        "Stop requested" if job.stop_requested_at else "Stop selected"
+                    )
+                    if not job.stop_requested_at:
+                        button_state = "normal"
             except (KeyError, ValueError):
-                can_cancel = False
+                pass
         self.cancel_job_button.configure(
-            state="normal" if can_cancel else "disabled"
+            text=button_text,
+            state=button_state,
         )
 
     def _toggle_queue_pause(self) -> None:
@@ -1911,6 +1932,29 @@ class DesktopApp:
         if not selection:
             return
         job_id = int(selection[0])
+        try:
+            job = self.store.get(job_id)
+        except KeyError as exc:
+            messagebox.showerror("Queue control", str(exc), parent=self.root)
+            return
+        if job.status == JobStatus.RUNNING:
+            if not messagebox.askyesno(
+                "Stop running job",
+                f"Stop Job #{job_id}? The active solver process will be "
+                "terminated and the job history will remain available.",
+                parent=self.root,
+            ):
+                return
+            try:
+                self.store.request_stop(job_id)
+            except ValueError as exc:
+                messagebox.showerror("Stop job", str(exc), parent=self.root)
+                return
+            self.refresh_jobs()
+            self.activity_var.set(
+                f"Stop requested for Job #{job_id}. Waiting for the solver to exit."
+            )
+            return
         if not messagebox.askyesno(
             "Cancel queued job",
             f"Cancel Job #{job_id}? Its history will remain available and it can be requeued later.",
@@ -1956,6 +2000,11 @@ class DesktopApp:
             self._show_job(self.store.get(int(selection[0])))
 
     def _show_job(self, job: Job) -> None:
+        status_label = (
+            "stopping"
+            if job.stop_requested_at and job.status == JobStatus.RUNNING
+            else job.status.value
+        )
         window = tk.Toplevel(self.root)
         window.title(f"Job #{job.id} details")
         window.geometry("980x720")
@@ -1970,7 +2019,7 @@ class DesktopApp:
         ).pack(anchor="w")
         ttk.Label(
             container,
-            text=f"{job.status.value} · {job.adapter} · {job.attempts} attempt(s)",
+            text=f"{status_label} · {job.adapter} · {job.attempts} attempt(s)",
             style="CardText.TLabel",
         ).pack(anchor="w", pady=(4, 14))
 
@@ -2000,6 +2049,7 @@ class DesktopApp:
                     "created_at": job.created_at,
                     "started_at": job.started_at or "",
                     "finished_at": job.finished_at or "",
+                    "stop_requested_at": job.stop_requested_at or "",
                 },
             ),
             ("Run identity", identity_values),
@@ -2729,6 +2779,8 @@ class DesktopApp:
         self.busy = True
         self.check_button.configure(state="disabled")
         self._set_run_actions(False)
+        if operation == "run":
+            self.root.after(250, self._refresh_active_run)
 
         def worker() -> None:
             try:
@@ -2742,6 +2794,12 @@ class DesktopApp:
             self.root.after(0, lambda: self._background_succeeded(result, on_success))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _refresh_active_run(self) -> None:
+        if not self.busy:
+            return
+        self.refresh_jobs()
+        self.root.after(500, self._refresh_active_run)
 
     def _background_succeeded(
         self,

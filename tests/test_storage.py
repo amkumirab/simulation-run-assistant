@@ -64,6 +64,7 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertIn("cancelled", schema)
             self.assertIn("run_signature", columns)
             self.assertIn("run_context", columns)
+            self.assertIn("stop_requested_at", columns)
 
 
 if __name__ == "__main__":

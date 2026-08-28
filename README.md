@@ -24,7 +24,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 
 - JSON manifests with explicit jobs or Cartesian parameter sweeps
 - Persistent SQLite queue with atomic claiming, pause/resume controls, and recovery
-- Failure isolation, reversible queued-job cancellation, and explicit retries
+- Failure isolation, reversible cancellation, active-run stopping, and retries
 - Pluggable simulation adapter interface and official COMSOL batch bridge
 - Deterministic electromagnetic mock adapter for demos and CI
 - Per-job JSON results and dependency-free SVG response plots
@@ -114,10 +114,11 @@ model inputs, computed-output formulas, Run now and Queue only actions, run
 details, local artifact access, and visual comparison for repeated simulation
 states. It does not start an HTTP server or require a browser.
 
-The **Runs** tab also provides persistent **Pause queue**, **Cancel selected**, and
-**Recover interrupted** controls. Pausing never terminates the active COMSOL
-process; it prevents the next job from starting. Recovery is always explicit so
-an active worker in another terminal is not mistaken for an interrupted run.
+The **Runs** tab also provides persistent **Pause queue**, **Cancel selected**,
+**Stop selected**, and **Recover interrupted** controls. Pausing prevents the next
+job from starting, while Stop selected targets the active solver process and keeps
+the cancelled run in history. Recovery is always explicit so an active worker in
+another terminal is not mistaken for an interrupted run.
 See [`docs/QUEUE_CONTROL.md`](docs/QUEUE_CONTROL.md) for the safe workflow.
 
 Choose **Review plan** before starting or queueing a sweep to detect states that
@@ -214,6 +215,7 @@ sim-assistant list [--status STATUS]   List recent jobs
 sim-assistant show JOB_ID              Print one complete job as JSON
 sim-assistant retry JOB_ID             Requeue a failed or cancelled job
 sim-assistant cancel JOB_ID            Cancel one queued job
+sim-assistant stop JOB_ID              Request a stop for one running job
 sim-assistant pause                    Pause new queue claims
 sim-assistant resume                   Resume queue processing
 sim-assistant recover [--fail]         Resolve interrupted running jobs
@@ -251,8 +253,8 @@ bot with:
 sim-assistant bot
 ```
 
-It supports `/status`, `/jobs`, `/job`, `/run`, `/retry`, `/cancel`, `/pause`,
-`/resume`, and `/help`. Commands
+It supports `/status`, `/jobs`, `/job`, `/run`, `/retry`, `/cancel`, `/stop`,
+`/pause`, `/resume`, and `/help`. Commands
 from chats other than `TELEGRAM_CHAT_ID` are ignored. See the complete
 [Telegram setup guide](docs/TELEGRAM_BOT.md).
 
@@ -269,14 +271,22 @@ python -m unittest discover -s tests -v
 Implement the small `SimulationAdapter` interface:
 
 ```python
-from simulation_assistant.adapters.base import SimulationAdapter
+from simulation_assistant.adapters.base import SimulationAdapter, SimulationCancelled
 from simulation_assistant.types import SimulationResult
 
 
 class MySolverAdapter(SimulationAdapter):
     name = "my-solver"
 
-    def run(self, parameters: dict, *, work_dir=None) -> SimulationResult:
+    def run(
+        self,
+        parameters: dict,
+        *,
+        work_dir=None,
+        cancel_requested=None,
+    ) -> SimulationResult:
+        if cancel_requested and cancel_requested():
+            raise SimulationCancelled("Stop requested by user")
         # Call the solver and normalize its output.
         return SimulationResult(metrics={}, series=[], metadata={})
 ```

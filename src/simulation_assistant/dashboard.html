@@ -249,7 +249,7 @@
       </div>
 
       <section class="hero">
-        <div class="eyebrow">Local simulation copilot</div>
+        <div class="eyebrow">Local simulation workspace</div>
         <h1>Move from model to result with less friction.</h1>
         <p>Connect a COMSOL model, review its studies and parameters, then launch and monitor runs from one focused workspace.</p>
       </section>
@@ -303,7 +303,7 @@
         </div>
 
         <aside class="panel assistant">
-          <div class="assistant-head"><div class="assistant-label">Assistant</div><h2>Run guidance</h2><p id="assistantSummary">Start by selecting your local COMSOL model. I will inspect it before any run begins.</p></div>
+          <div class="assistant-head"><div class="assistant-label">Workspace</div><h2>Run guidance</h2><p id="assistantSummary">Start by selecting a local COMSOL model. The model is inspected before any run begins.</p></div>
           <div class="assistant-body">
             <div class="assistant-log" id="assistantLog" aria-live="polite"></div>
             <div class="quick-actions">
@@ -489,7 +489,7 @@
       const button = byId('quickRunNext'); button.disabled = true;
       try {
         const summary = await api('/api/queue/run-next', { method: 'POST', body: JSON.stringify({ connection: connectionPayload() }) });
-        const message = summary.processed ? `${summary.succeeded} succeeded, ${summary.failed} failed.` : (summary.queue_paused ? 'The queue is paused.' : 'The queue is empty.');
+        const message = summary.processed ? `${summary.succeeded} succeeded, ${summary.failed} failed, ${summary.cancelled} stopped.` : (summary.queue_paused ? 'The queue is paused.' : 'The queue is empty.');
         addMessage('Queue worker finished', message, summary.failed ? 'error' : 'success'); notify(message, Boolean(summary.failed)); await refreshJobs();
       } catch (error) { addMessage('Worker failed', error.message, 'error'); notify(error.message, true); }
       finally { button.disabled = false; }
@@ -512,7 +512,7 @@
         const row = tbody.insertRow(); row.tabIndex = 0; row.setAttribute('aria-label', `Open job ${job.id}`);
         const id = row.insertCell(); const code = document.createElement('code'); code.textContent = `#${job.id}`; id.append(code);
         [job.batch_name, job.adapter].forEach(value => { const cell = row.insertCell(); cell.textContent = value; });
-        const statusCell = row.insertCell(); const badge = document.createElement('span'); badge.className = `status ${job.status}`; badge.textContent = job.status; statusCell.append(badge);
+        const statusCell = row.insertCell(); const badge = document.createElement('span'); badge.className = `status ${job.status}`; badge.textContent = job.stop_requested_at && job.status === 'running' ? 'stopping' : job.status; statusCell.append(badge);
         row.insertCell().textContent = job.attempts; row.insertCell().textContent = shortDate(job.created_at);
         row.addEventListener('click', () => showJob(job.id)); row.addEventListener('keydown', event => { if (event.key === 'Enter') showJob(job.id); });
       });
@@ -531,6 +531,7 @@
         const raw = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Show raw job data';
         const pre = document.createElement('pre'); pre.textContent = JSON.stringify(job, null, 2); raw.append(summary, pre); body.append(raw);
         if (job.status === 'failed' || job.status === 'cancelled') { const retry = document.createElement('button'); retry.className = 'button secondary'; retry.style.marginTop = '14px'; retry.textContent = job.status === 'cancelled' ? 'Requeue this job' : 'Retry this job'; retry.addEventListener('click', () => retryJob(job.id)); body.append(retry); }
+        if (job.status === 'running') { const stop = document.createElement('button'); stop.className = 'button secondary'; stop.style.marginTop = '14px'; stop.disabled = Boolean(job.stop_requested_at); stop.textContent = job.stop_requested_at ? 'Stop requested' : 'Stop this job'; stop.addEventListener('click', () => stopJob(job.id)); body.append(stop); }
         byId('jobDialog').showModal();
       } catch (error) { notify(error.message, true); }
     }
@@ -554,11 +555,16 @@
       catch (error) { notify(error.message, true); }
     }
 
+    async function stopJob(jobId) {
+      try { await api(`/api/jobs/${jobId}/stop`, { method: 'POST', body: '{}' }); byId('jobDialog').close(); addMessage(`Stop requested for Job #${jobId}`, 'The active solver process will be stopped and the job will remain in history.', 'info'); await refreshJobs(); }
+      catch (error) { notify(error.message, true); }
+    }
+
     function resetSession() {
       byId('connectionForm').reset(); byId('timeout').value = 3600; setMode('study'); state.verified = false; state.report = null;
       byId('modelCard').className = 'model-card'; byId('connectionState').textContent = 'Not checked'; byId('connectionState').className = 'connection-state';
       byId('runNow').disabled = true; byId('queueOnly').disabled = true; byId('parameterList').replaceChildren(); renderEmptyParameters();
-      byId('assistantSummary').textContent = 'Start by selecting your local COMSOL model. I will inspect it before any run begins.'; addMessage('Session reset', 'No model path or connection setting was saved.', 'info'); loadDiscovery();
+      byId('assistantSummary').textContent = 'Start by selecting a local COMSOL model. The model is inspected before any run begins.'; addMessage('Session reset', 'No model path or connection setting was saved.', 'info'); loadDiscovery();
     }
 
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));

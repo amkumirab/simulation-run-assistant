@@ -57,6 +57,9 @@ def build_parser() -> argparse.ArgumentParser:
     cancel = subparsers.add_parser("cancel", help="Cancel one queued job")
     cancel.add_argument("job_id", type=int)
 
+    stop = subparsers.add_parser("stop", help="Request a stop for one running job")
+    stop.add_argument("job_id", type=int)
+
     subparsers.add_parser("pause", help="Pause the persistent run queue")
     subparsers.add_parser("resume", help="Resume the persistent run queue")
 
@@ -125,7 +128,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             ).run_pending(limit=args.limit)
             print(
                 f"Processed {summary.processed}: "
-                f"{summary.succeeded} succeeded, {summary.failed} failed."
+                f"{summary.succeeded} succeeded, {summary.failed} failed, "
+                f"{summary.cancelled} stopped."
             )
         elif args.command == "list":
             status = JobStatus(args.status) if args.status else None
@@ -138,6 +142,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         elif args.command == "cancel":
             store.cancel(args.job_id)
             print(f"Job {args.job_id} was cancelled.")
+        elif args.command == "stop":
+            store.request_stop(args.job_id)
+            print(f"Stop requested for running Job {args.job_id}.")
         elif args.command == "pause":
             store.set_queue_paused(True)
             print("Run queue paused. The active job is not interrupted.")
