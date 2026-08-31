@@ -88,6 +88,8 @@ class SimulationRunner:
                     f"Unknown adapter '{job.adapter}'. Available: {available}"
                 )
             work_dir = self.artifact_root / f"job-{job.id:06d}"
+            work_dir.mkdir(parents=True, exist_ok=True)
+            self.store.record_artifact_dir(job.id, work_dir)
             run_parameters = inspect.signature(adapter.run).parameters.values()
             supports_cancellation = any(
                 parameter.name == "cancel_requested"

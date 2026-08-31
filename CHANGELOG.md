@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.15.0] - 2026-08-31
+
+### Added
+
+- Live COMSOL stage and percentage monitoring from bounded solver-log tails
+- Elapsed-time, last-activity, and stale-run indicators for active jobs
+- Native job monitor with an updating log view, direct log access, and stop control
+- Live progress columns in both native and local web run queues
+- Auto-refreshing dashboard job details with the latest COMSOL log output
+- Tests for real progress formats, stale activity, log safety, API output, and retries
+
+### Changed
+
+- Active artifact directories are recorded before adapter execution begins
+- Failed attempts retain their work directory and diagnostic log location
+- Desktop queue polling avoids rebuilding completed-run comparisons
+- Package version increased to 0.15.0
+
 ## [0.14.0] - 2026-08-28
 
 ### Added

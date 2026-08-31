@@ -31,6 +31,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Guided local web assistant for COMSOL connection checks, run setup, queueing,
   targeted execution, monitoring, details, and retries
 - Native desktop assistant with no browser or local web server requirement
+- Live COMSOL stage, percentage, elapsed time, activity warning, and log monitoring
 - Local workspace profiles for recent models, COMSOL targets, formulas, and sweep presets
 - COMSOL Plot Group discovery, viewing, sweep comparison, and portable reports
 - Native parameter-sweep builder with Cartesian preview, sequential execution,
@@ -120,6 +121,13 @@ job from starting, while Stop selected targets the active solver process and kee
 the cancelled run in history. Recovery is always explicit so an active worker in
 another terminal is not mistaken for an interrupted run.
 See [`docs/QUEUE_CONTROL.md`](docs/QUEUE_CONTROL.md) for the safe workflow.
+
+While a COMSOL job is running, the queue displays the latest percentage and
+solver stage parsed from `comsol.log`. Double-click the row to open **Live
+monitor**, which refreshes the elapsed time, last activity, recent log output,
+and stop control without blocking the desktop interface. A warning appears after
+five minutes without new log output; this is a diagnostic signal, not an
+automatic failure. See [`docs/LIVE_RUN_MONITOR.md`](docs/LIVE_RUN_MONITOR.md).
 
 Choose **Review plan** before starting or queueing a sweep to detect states that
 already succeeded, are already scheduled, or repeat inside the current request.

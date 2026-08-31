@@ -60,23 +60,32 @@ class DashboardTests(unittest.TestCase):
         self.thread.join(timeout=2)
         self.temp_dir.cleanup()
 
-    def request(self, method, path, payload=None, *, token=None):
-        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
-        body = json.dumps(payload) if payload is not None else None
-        headers = {}
-        if payload is not None:
-            headers["Content-Type"] = "application/json"
-        if token is not None:
-            headers["X-Sim-Assistant-Token"] = token
-        connection.request(method, path, body=body, headers=headers)
-        response = connection.getresponse()
-        response_body = response.read().decode("utf-8")
-        response_headers = {
-            name.lower(): value for name, value in response.getheaders()
-        }
-        result = response.status, response_headers, response_body
-        connection.close()
-        return result
+    def request(self, method, path, payload=None, *, token=None, retry_reset=False):
+        attempts = 2 if retry_reset else 1
+        for attempt in range(attempts):
+            connection = http.client.HTTPConnection(
+                "127.0.0.1", self.port, timeout=5
+            )
+            body = json.dumps(payload) if payload is not None else None
+            headers = {}
+            if payload is not None:
+                headers["Content-Type"] = "application/json"
+            if token is not None:
+                headers["X-Sim-Assistant-Token"] = token
+            try:
+                connection.request(method, path, body=body, headers=headers)
+                response = connection.getresponse()
+                response_body = response.read().decode("utf-8")
+                response_headers = {
+                    name.lower(): value for name, value in response.getheaders()
+                }
+                return response.status, response_headers, response_body
+            except ConnectionResetError:
+                if attempt + 1 == attempts:
+                    raise
+            finally:
+                connection.close()
+        raise AssertionError("Local request retry was exhausted")
 
     def connection(self):
         return {
@@ -98,7 +107,10 @@ class DashboardTests(unittest.TestCase):
 
     def test_write_actions_require_the_session_token(self) -> None:
         status, _, body = self.request(
-            "POST", "/api/comsol/check", {"connection": self.connection()}
+            "POST",
+            "/api/comsol/check",
+            {"connection": self.connection()},
+            retry_reset=True,
         )
 
         self.assertEqual(status, 403)
@@ -202,6 +214,33 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(status, 202)
         self.assertEqual(payload["status"], "running")
         self.assertIsNotNone(payload["stop_requested_at"])
+
+    def test_reports_live_comsol_progress_and_log_tail(self) -> None:
+        store = JobStore(self.root / "jobs.db")
+        job_id = store.enqueue_batch("active-monitor", "comsol", [{"x": 1}])[0]
+        store.claim(job_id)
+        artifact_dir = self.root / "artifacts" / f"job-{job_id:06d}"
+        artifact_dir.mkdir(parents=True)
+        store.record_artifact_dir(job_id, artifact_dir)
+        (artifact_dir / "comsol.log").write_text(
+            "<---- Stationary Solver 1 ----------------\n"
+            "Current Progress:  42 % - Solving linear system\n",
+            encoding="utf-8",
+        )
+
+        status, _, body = self.request("GET", f"/api/jobs/{job_id}")
+
+        payload = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["progress"]["percent"], 42)
+        self.assertEqual(payload["progress"]["stage"], "Solving linear system")
+        self.assertIn("Current Progress", payload["progress"]["log_tail"][-1])
+
+        status, _, body = self.request("GET", "/api/jobs")
+        listed = json.loads(body)["jobs"][0]
+        self.assertEqual(status, 200)
+        self.assertEqual(listed["progress"]["summary"], "42% · Solving linear system")
+        self.assertEqual(listed["progress"]["log_tail"], [])
 
     def test_refuses_non_local_bindings(self) -> None:
         with self.assertRaisesRegex(ValueError, "loopback"):

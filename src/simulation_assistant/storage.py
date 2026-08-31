@@ -261,6 +261,20 @@ class JobStore:
             if cursor.rowcount != 1:
                 raise RuntimeError(f"Job {job_id} is not running")
 
+    def record_artifact_dir(self, job_id: int, artifact_dir: str | Path) -> None:
+        """Expose the current attempt directory while a job is still running."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET artifact_dir = ?
+                WHERE id = ? AND status = ?
+                """,
+                (str(artifact_dir), job_id, JobStatus.RUNNING.value),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError(f"Job {job_id} is not running")
+
     def mark_failed(self, job_id: int, error: str) -> None:
         with self._connect() as connection:
             cursor = connection.execute(

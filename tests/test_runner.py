@@ -51,11 +51,15 @@ class RunnerTests(unittest.TestCase):
         summary = runner.run_pending()
 
         self.assertEqual(summary.failed, 1)
-        self.assertEqual(self.store.get(job_id).status, JobStatus.FAILED)
+        failed = self.store.get(job_id)
+        self.assertEqual(failed.status, JobStatus.FAILED)
+        self.assertEqual(Path(failed.artifact_dir or ""), self.root / "artifacts" / "job-000001")
+        self.assertTrue(Path(failed.artifact_dir or "").is_dir())
         self.store.retry(job_id)
         retried = self.store.get(job_id)
         self.assertEqual(retried.status, JobStatus.QUEUED)
         self.assertEqual(retried.attempts, 1)
+        self.assertIsNone(retried.artifact_dir)
 
     def test_unknown_adapter_only_fails_its_own_job(self) -> None:
         self.store.enqueue_batch("unknown", "not-installed", [{"x": 1}])

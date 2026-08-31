@@ -196,6 +196,11 @@
     .kv span { display: block; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
     .kv code { display: block; margin-top: 4px; color: var(--ink); overflow-wrap: anywhere; }
     .error-box { margin-top: 16px; padding: 12px; border-radius: 10px; color: var(--red); background: var(--red-soft); overflow-wrap: anywhere; }
+    .progress-box { margin: 0 0 18px; padding: 14px; border-radius: 12px; background: var(--blue-soft); border: 1px solid #cad9ff; }
+    .progress-box strong { display: block; color: var(--navy); font-size: 15px; }
+    .progress-box span { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .progress-box.stale { background: var(--amber-soft); border-color: #efd995; }
+    .log-heading { margin: 18px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
     details { margin-top: 18px; }
     summary { cursor: pointer; color: var(--blue); font-weight: 700; margin-bottom: 10px; }
     pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border-radius: 11px; background: #112638; color: #d7e4ed; font: 11px/1.6 "Cascadia Code", Consolas, monospace; }
@@ -320,7 +325,7 @@
           <div class="panel-title"><div class="panel-index">3</div><div><h2>Run queue</h2><div class="panel-subtitle">Select a row to inspect parameters, results, artifacts, and errors.</div></div></div>
           <div class="queue-toolbar"><select class="filter" id="statusFilter" aria-label="Filter by status"><option value="all">All statuses</option><option value="queued">Queued</option><option value="running">Running</option><option value="succeeded">Succeeded</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option></select></div>
         </div>
-        <div class="table-wrap"><table><thead><tr><th>ID</th><th>Run</th><th>Adapter</th><th>Status</th><th>Attempts</th><th>Created</th></tr></thead><tbody id="jobs"><tr><td class="empty-row" colspan="6">No jobs yet.</td></tr></tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>ID</th><th>Run</th><th>Adapter</th><th>Status</th><th>Live progress</th><th>Attempts</th><th>Created</th></tr></thead><tbody id="jobs"><tr><td class="empty-row" colspan="7">No jobs yet.</td></tr></tbody></table></div>
       </section>
     </main>
   </div>
@@ -333,10 +338,17 @@
 
   <script>
     const API_TOKEN = __API_TOKEN__;
-    const state = { verified: false, mode: 'study', jobs: [], report: null };
+    const state = { verified: false, mode: 'study', jobs: [], report: null, openJobId: null };
     const byId = id => document.getElementById(id);
     const text = value => value == null || value === '' ? 'Not set' : String(value);
     const shortDate = value => value ? new Date(value).toLocaleString() : 'Not started';
+    const duration = value => {
+      const seconds = Math.max(0, Number(value) || 0);
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainder = Math.floor(seconds % 60);
+      return hours ? `${hours}h ${minutes}m ${remainder}s` : (minutes ? `${minutes}m ${remainder}s` : `${remainder}s`);
+    };
 
     function connectionPayload() {
       return {
@@ -500,6 +512,7 @@
         const data = await api('/api/jobs'); state.jobs = data.jobs;
         ['queued', 'running', 'succeeded', 'failed', 'cancelled'].forEach(status => byId(`count${status[0].toUpperCase()}${status.slice(1)}`).textContent = data.counts[status] || 0);
         renderJobs(); byId('updated').textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        if (state.openJobId !== null && byId('jobDialog').open) await refreshOpenJob();
       } catch (error) { byId('updated').textContent = 'Dashboard unavailable'; }
     }
 
@@ -507,20 +520,31 @@
       const filter = byId('statusFilter').value;
       const jobs = state.jobs.filter(job => filter === 'all' || job.status === filter);
       const tbody = byId('jobs'); tbody.replaceChildren();
-      if (!jobs.length) { const row = tbody.insertRow(); const cell = row.insertCell(); cell.colSpan = 6; cell.className = 'empty-row'; cell.textContent = filter === 'all' ? 'No runs yet. Connect COMSOL to start one.' : `No ${filter} runs.`; return; }
+      if (!jobs.length) { const row = tbody.insertRow(); const cell = row.insertCell(); cell.colSpan = 7; cell.className = 'empty-row'; cell.textContent = filter === 'all' ? 'No runs yet. Connect COMSOL to start one.' : `No ${filter} runs.`; return; }
       jobs.forEach(job => {
         const row = tbody.insertRow(); row.tabIndex = 0; row.setAttribute('aria-label', `Open job ${job.id}`);
         const id = row.insertCell(); const code = document.createElement('code'); code.textContent = `#${job.id}`; id.append(code);
         [job.batch_name, job.adapter].forEach(value => { const cell = row.insertCell(); cell.textContent = value; });
         const statusCell = row.insertCell(); const badge = document.createElement('span'); badge.className = `status ${job.status}`; badge.textContent = job.stop_requested_at && job.status === 'running' ? 'stopping' : job.status; statusCell.append(badge);
+        row.insertCell().textContent = job.progress?.summary || '—';
         row.insertCell().textContent = job.attempts; row.insertCell().textContent = shortDate(job.created_at);
         row.addEventListener('click', () => showJob(job.id)); row.addEventListener('keydown', event => { if (event.key === 'Enter') showJob(job.id); });
       });
     }
 
     async function showJob(jobId) {
+      state.openJobId = jobId;
       try {
-        const job = await api(`/api/jobs/${jobId}`); const body = byId('dialogBody'); body.replaceChildren(); byId('dialogTitle').textContent = `Job #${job.id} · ${job.batch_name}`;
+        await refreshOpenJob();
+        if (!byId('jobDialog').open) byId('jobDialog').showModal();
+      } catch (error) { state.openJobId = null; notify(error.message, true); }
+    }
+
+    async function refreshOpenJob() {
+      if (state.openJobId === null) return;
+      const job = await api(`/api/jobs/${state.openJobId}`);
+      const body = byId('dialogBody'); body.replaceChildren(); byId('dialogTitle').textContent = `Job #${job.id} · ${job.batch_name}`;
+        if (job.progress) appendProgress(body, job.progress);
         const grid = document.createElement('div'); grid.className = 'detail-grid';
         [['Status', job.status], ['Adapter', job.adapter], ['Attempts', job.attempts], ['Created', shortDate(job.created_at)]].forEach(([label, value]) => { const item = document.createElement('div'); item.className = 'detail'; const span = document.createElement('span'); span.textContent = label; const bold = document.createElement('b'); bold.textContent = value; item.append(span, bold); grid.append(item); });
         body.append(grid);
@@ -532,8 +556,20 @@
         const pre = document.createElement('pre'); pre.textContent = JSON.stringify(job, null, 2); raw.append(summary, pre); body.append(raw);
         if (job.status === 'failed' || job.status === 'cancelled') { const retry = document.createElement('button'); retry.className = 'button secondary'; retry.style.marginTop = '14px'; retry.textContent = job.status === 'cancelled' ? 'Requeue this job' : 'Retry this job'; retry.addEventListener('click', () => retryJob(job.id)); body.append(retry); }
         if (job.status === 'running') { const stop = document.createElement('button'); stop.className = 'button secondary'; stop.style.marginTop = '14px'; stop.disabled = Boolean(job.stop_requested_at); stop.textContent = job.stop_requested_at ? 'Stop requested' : 'Stop this job'; stop.addEventListener('click', () => stopJob(job.id)); body.append(stop); }
-        byId('jobDialog').showModal();
-      } catch (error) { notify(error.message, true); }
+    }
+
+    function appendProgress(parent, progress) {
+      const box = document.createElement('div'); box.className = `progress-box${progress.stale ? ' stale' : ''}`;
+      const summary = document.createElement('strong'); summary.textContent = progress.summary;
+      const detail = document.createElement('span');
+      const idle = progress.idle_seconds == null ? 'not available' : `${duration(progress.idle_seconds)} ago`;
+      detail.textContent = `Elapsed ${duration(progress.elapsed_seconds)} · Last activity ${idle} · ${progress.message}`;
+      box.append(summary, detail); parent.append(box);
+      if (progress.log_tail?.length) {
+        const heading = document.createElement('h3'); heading.className = 'log-heading'; heading.textContent = 'Live COMSOL log';
+        const pre = document.createElement('pre'); pre.textContent = progress.log_tail.join('\n');
+        parent.append(heading, pre);
+      }
     }
 
     function appendObjectSection(parent, title, values) {
@@ -551,12 +587,12 @@
     }
 
     async function retryJob(jobId) {
-      try { await api(`/api/jobs/${jobId}/retry`, { method: 'POST', body: '{}' }); byId('jobDialog').close(); addMessage(`Job #${jobId} requeued`, 'The run is ready to be processed again.', 'success'); await refreshJobs(); }
+      try { await api(`/api/jobs/${jobId}/retry`, { method: 'POST', body: '{}' }); byId('jobDialog').close(); state.openJobId = null; addMessage(`Job #${jobId} requeued`, 'The run is ready to be processed again.', 'success'); await refreshJobs(); }
       catch (error) { notify(error.message, true); }
     }
 
     async function stopJob(jobId) {
-      try { await api(`/api/jobs/${jobId}/stop`, { method: 'POST', body: '{}' }); byId('jobDialog').close(); addMessage(`Stop requested for Job #${jobId}`, 'The active solver process will be stopped and the job will remain in history.', 'info'); await refreshJobs(); }
+      try { await api(`/api/jobs/${jobId}/stop`, { method: 'POST', body: '{}' }); addMessage(`Stop requested for Job #${jobId}`, 'The active solver process will be stopped and the job will remain in history.', 'info'); await refreshJobs(); }
       catch (error) { notify(error.message, true); }
     }
 
@@ -574,6 +610,7 @@
     byId('runNow').addEventListener('click', () => submitRun(true)); byId('queueOnly').addEventListener('click', () => submitRun(false));
     byId('refreshButton').addEventListener('click', refreshJobs); byId('quickRefresh').addEventListener('click', refreshJobs); byId('quickCheck').addEventListener('click', checkConnection); byId('quickRunNext').addEventListener('click', runNext);
     byId('statusFilter').addEventListener('change', renderJobs); byId('closeDialog').addEventListener('click', () => byId('jobDialog').close());
+    byId('jobDialog').addEventListener('close', () => { state.openJobId = null; });
     byId('batchName').value = `comsol-run-${new Date().toISOString().slice(0, 10)}`;
     addMessage('Workspace ready', 'Connection details remain in memory for this local session only.', 'info');
     loadDiscovery(); refreshJobs(); setInterval(refreshJobs, 5000);

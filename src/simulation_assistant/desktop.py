@@ -34,6 +34,7 @@ from simulation_assistant.preflight import (
     build_comsol_run_context,
     build_preflight_plan,
 )
+from simulation_assistant.progress import format_duration, inspect_job_progress
 from simulation_assistant.profiles import (
     ProfileStore,
     WorkspaceProfile,
@@ -172,6 +173,8 @@ class DesktopApp:
         self._load_defaults()
         self._restore_last_profile()
         self.refresh_jobs()
+        self._observed_running_jobs = self.store.counts()[JobStatus.RUNNING.value]
+        self.root.after(1500, self._poll_running_jobs)
 
     def _configure_window(self) -> None:
         self.root.title("Simulation Run Assistant")
@@ -788,7 +791,15 @@ class DesktopApp:
 
         self.jobs_tree = ttk.Treeview(
             card,
-            columns=("id", "batch", "status", "adapter", "attempts", "created"),
+            columns=(
+                "id",
+                "batch",
+                "status",
+                "progress",
+                "adapter",
+                "attempts",
+                "created",
+            ),
             show="headings",
             height=7,
         )
@@ -796,17 +807,26 @@ class DesktopApp:
             "id": "ID",
             "batch": "RUN",
             "status": "STATUS",
+            "progress": "LIVE PROGRESS",
             "adapter": "ADAPTER",
             "attempts": "ATTEMPTS",
             "created": "CREATED",
         }
-        widths = {"id": 60, "batch": 270, "status": 100, "adapter": 100, "attempts": 80, "created": 170}
+        widths = {
+            "id": 60,
+            "batch": 220,
+            "status": 90,
+            "progress": 260,
+            "adapter": 85,
+            "attempts": 75,
+            "created": 155,
+        }
         for column, heading in headings.items():
             self.jobs_tree.heading(column, text=heading)
             self.jobs_tree.column(
                 column,
                 width=widths[column],
-                stretch=column in {"batch", "created"},
+                stretch=column in {"batch", "progress", "created"},
             )
         self.jobs_tree.grid(row=1, column=0, sticky="nsew")
         self.jobs_tree.bind("<Double-1>", self._open_selected_job)
@@ -1803,26 +1823,6 @@ class DesktopApp:
         self.refresh_jobs()
         self.refresh_comparison()
         metadata = (job.result or {}).get("metadata", {})
-        identity_model = job.run_context.get("model", {})
-        if not isinstance(identity_model, dict):
-            identity_model = {}
-        identity_target = job.run_context.get("target", {})
-        if not isinstance(identity_target, dict):
-            identity_target = {}
-        identity_plots = job.run_context.get("plot_tags", [])
-        if not isinstance(identity_plots, list):
-            identity_plots = []
-        identity_values = {
-            "signature": job.run_signature or "Not recorded",
-            "model": identity_model.get("name", "Not recorded"),
-            "model_size_bytes": identity_model.get("size_bytes", ""),
-            "target": (
-                f"{identity_target.get('kind', '')}: {identity_target.get('tag', '')}"
-                if identity_target
-                else "Not recorded"
-            ),
-            "plot_groups": ", ".join(str(tag) for tag in identity_plots),
-        }
         formula_errors = metadata.get("formula_errors", {})
         plot_errors = metadata.get("plot_export_errors", {})
         if job.status == JobStatus.SUCCEEDED and (formula_errors or plot_errors):
@@ -1845,7 +1845,7 @@ class DesktopApp:
         else:
             self.activity_var.set("The run queue is empty.")
 
-    def refresh_jobs(self) -> None:
+    def refresh_jobs(self, *, refresh_comparison: bool = True) -> None:
         if not hasattr(self, "jobs_tree"):
             return
         self.jobs_tree.delete(*self.jobs_tree.get_children())
@@ -1855,6 +1855,9 @@ class DesktopApp:
                 if job.status == JobStatus.RUNNING and job.stop_requested_at
                 else job.status.value
             )
+            progress_label = ""
+            if job.adapter == "comsol" and job.status == JobStatus.RUNNING:
+                progress_label = inspect_job_progress(job).summary
             self.jobs_tree.insert(
                 "",
                 "end",
@@ -1863,13 +1866,25 @@ class DesktopApp:
                     f"#{job.id}",
                     job.batch_name,
                     status_label,
+                    progress_label,
                     job.adapter,
                     job.attempts,
                     job.created_at.replace("T", " "),
                 ),
             )
         self._update_queue_controls()
-        self.refresh_comparison()
+        if refresh_comparison:
+            self.refresh_comparison()
+
+    def _poll_running_jobs(self) -> None:
+        try:
+            running = self.store.counts()[JobStatus.RUNNING.value]
+            if not self.busy and (running or self._observed_running_jobs):
+                self.refresh_jobs(refresh_comparison=False)
+            self._observed_running_jobs = running
+            self.root.after(2000, self._poll_running_jobs)
+        except tk.TclError:
+            return
 
     def _update_queue_controls(self) -> None:
         if not hasattr(self, "pause_queue_button"):
@@ -1938,22 +1953,7 @@ class DesktopApp:
             messagebox.showerror("Queue control", str(exc), parent=self.root)
             return
         if job.status == JobStatus.RUNNING:
-            if not messagebox.askyesno(
-                "Stop running job",
-                f"Stop Job #{job_id}? The active solver process will be "
-                "terminated and the job history will remain available.",
-                parent=self.root,
-            ):
-                return
-            try:
-                self.store.request_stop(job_id)
-            except ValueError as exc:
-                messagebox.showerror("Stop job", str(exc), parent=self.root)
-                return
-            self.refresh_jobs()
-            self.activity_var.set(
-                f"Stop requested for Job #{job_id}. Waiting for the solver to exit."
-            )
+            self._request_job_stop(job_id, self.root)
             return
         if not messagebox.askyesno(
             "Cancel queued job",
@@ -2025,7 +2025,32 @@ class DesktopApp:
 
         notebook = ttk.Notebook(container)
         notebook.pack(fill="both", expand=True)
+        live_tab = None
+        if job.adapter == "comsol" and (
+            job.status == JobStatus.RUNNING or job.artifact_dir
+        ):
+            live_tab = self._add_live_monitor(notebook, job.id, window)
         metadata = (job.result or {}).get("metadata", {})
+        identity_model = job.run_context.get("model", {})
+        if not isinstance(identity_model, dict):
+            identity_model = {}
+        identity_target = job.run_context.get("target", {})
+        if not isinstance(identity_target, dict):
+            identity_target = {}
+        identity_plots = job.run_context.get("plot_tags", [])
+        if not isinstance(identity_plots, list):
+            identity_plots = []
+        identity_values = {
+            "signature": job.run_signature or "Not recorded",
+            "model": identity_model.get("name", "Not recorded"),
+            "model_size_bytes": identity_model.get("size_bytes", ""),
+            "target": (
+                f"{identity_target.get('kind', '')}: {identity_target.get('tag', '')}"
+                if identity_target
+                else "Not recorded"
+            ),
+            "plot_groups": ", ".join(str(tag) for tag in identity_plots),
+        }
         plot_exports = [
             item
             for item in metadata.get("plot_exports", [])
@@ -2073,6 +2098,8 @@ class DesktopApp:
             tree.pack(fill="both", expand=True)
             for name, value in values.items():
                 tree.insert("", "end", values=(name, self._format_number(value)))
+        if live_tab is not None and job.status == JobStatus.RUNNING:
+            notebook.select(live_tab)
 
         footer = ttk.Frame(container, style="Card.TFrame")
         footer.pack(fill="x", pady=(12, 0))
@@ -2096,6 +2123,143 @@ class DesktopApp:
             style="Primary.TButton",
             command=window.destroy,
         ).pack(side="right")
+
+    def _add_live_monitor(
+        self,
+        notebook: ttk.Notebook,
+        job_id: int,
+        window: tk.Toplevel,
+    ) -> ttk.Frame:
+        frame = ttk.Frame(notebook, style="Card.TFrame", padding=16)
+        notebook.add(frame, text="Live monitor")
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_rowconfigure(3, weight=1)
+
+        summary_var = tk.StringVar(value="Reading solver activity...")
+        detail_var = tk.StringVar(value="")
+        warning_var = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=summary_var, style="CardTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(frame, textvariable=detail_var, style="CardText.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(4, 0)
+        )
+        ttk.Label(frame, textvariable=warning_var, style="CardText.TLabel").grid(
+            row=2, column=0, sticky="w", pady=(4, 10)
+        )
+        log_text = tk.Text(
+            frame,
+            wrap="none",
+            background="#101820",
+            foreground="#d9e4eb",
+            insertbackground="white",
+            font=("Cascadia Mono", 9),
+            padx=12,
+            pady=10,
+            relief="flat",
+            state="disabled",
+        )
+        log_text.grid(row=3, column=0, sticky="nsew")
+        controls = ttk.Frame(frame, style="Card.TFrame")
+        controls.grid(row=4, column=0, sticky="ew", pady=(10, 0))
+        open_button = ttk.Button(
+            controls,
+            text="Open live log",
+            style="Secondary.TButton",
+            state="disabled",
+        )
+        open_button.pack(side="left")
+        stop_button = ttk.Button(
+            controls,
+            text="Stop job",
+            style="Secondary.TButton",
+            command=lambda: self._request_job_stop(job_id, window),
+        )
+        stop_button.pack(side="left", padx=(8, 0))
+
+        def refresh_monitor() -> None:
+            try:
+                if not window.winfo_exists():
+                    return
+                current_job = self.store.get(job_id)
+                progress = inspect_job_progress(current_job)
+                summary_var.set(progress.summary)
+                activity = (
+                    f"{format_duration(progress.idle_seconds)} ago"
+                    if progress.idle_seconds is not None
+                    else "Not available"
+                )
+                detail_var.set(
+                    f"Elapsed: {format_duration(progress.elapsed_seconds)} · "
+                    f"Last activity: {activity} · {progress.message}"
+                )
+                warning_var.set(
+                    "No recent log activity. Check the solver window, license, or model."
+                    if progress.stale
+                    else ""
+                )
+                log_text.configure(state="normal")
+                log_text.delete("1.0", "end")
+                log_text.insert("1.0", "\n".join(progress.log_tail))
+                log_text.see("end")
+                log_text.configure(state="disabled")
+                open_button.configure(
+                    state="normal" if progress.log_exists else "disabled",
+                    command=(
+                        lambda path=progress.log_path: self._open_live_log(path, window)
+                    ),
+                )
+                can_stop = (
+                    current_job.status == JobStatus.RUNNING
+                    and not current_job.stop_requested_at
+                )
+                stop_button.configure(
+                    state="normal" if can_stop else "disabled",
+                    text=(
+                        "Stop requested"
+                        if current_job.stop_requested_at
+                        else "Stop job"
+                    ),
+                )
+                if current_job.status == JobStatus.RUNNING:
+                    window.after(1000, refresh_monitor)
+            except (KeyError, OSError, tk.TclError):
+                return
+
+        refresh_monitor()
+        return frame
+
+    def _open_live_log(self, path: str | None, parent: tk.Misc) -> None:
+        if not path or not Path(path).is_file():
+            messagebox.showerror(
+                "Live monitor",
+                "The COMSOL log is not available yet.",
+                parent=parent,
+            )
+            return
+        try:
+            os.startfile(Path(path))  # type: ignore[attr-defined]
+        except OSError as exc:
+            messagebox.showerror("Live monitor", str(exc), parent=parent)
+
+    def _request_job_stop(self, job_id: int, parent: tk.Misc) -> bool:
+        if not messagebox.askyesno(
+            "Stop running job",
+            f"Stop Job #{job_id}? The active solver process will be "
+            "terminated and the job history will remain available.",
+            parent=parent,
+        ):
+            return False
+        try:
+            self.store.request_stop(job_id)
+        except ValueError as exc:
+            messagebox.showerror("Stop job", str(exc), parent=parent)
+            return False
+        self.refresh_jobs(refresh_comparison=False)
+        self.activity_var.set(
+            f"Stop requested for Job #{job_id}. Waiting for the solver to exit."
+        )
+        return True
 
     def _add_plot_viewer(
         self,
@@ -2798,7 +2962,7 @@ class DesktopApp:
     def _refresh_active_run(self) -> None:
         if not self.busy:
             return
-        self.refresh_jobs()
+        self.refresh_jobs(refresh_comparison=False)
         self.root.after(500, self._refresh_active_run)
 
     def _background_succeeded(

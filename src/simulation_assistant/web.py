@@ -21,8 +21,10 @@ from simulation_assistant.adapters.comsol import (
 )
 from simulation_assistant.notifications import notifier_from_environment
 from simulation_assistant.preflight import build_comsol_run_context
+from simulation_assistant.progress import inspect_job_progress
 from simulation_assistant.runner import SimulationRunner
 from simulation_assistant.storage import JobStore
+from simulation_assistant.types import Job, JobStatus
 
 
 JOB_PATH = re.compile(r"^/api/jobs/(\d+)$")
@@ -69,7 +71,10 @@ def create_dashboard_server(
                     HTTPStatus.OK,
                     {
                         "counts": store.counts(),
-                        "jobs": [job.to_dict() for job in store.list(limit=200)],
+                        "jobs": [
+                            _job_payload(job, include_log=False)
+                            for job in store.list(limit=200)
+                        ],
                     },
                 )
                 return
@@ -80,7 +85,7 @@ def create_dashboard_server(
                 except KeyError:
                     self._json(HTTPStatus.NOT_FOUND, {"error": "Job not found"})
                     return
-                self._json(HTTPStatus.OK, job.to_dict())
+                self._json(HTTPStatus.OK, _job_payload(job, include_log=True))
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
 
@@ -258,6 +263,18 @@ def _runner(
         adapters=[MockElectromagneticAdapter(), ComsolAdapter(config)],
         notifier=notifier_from_environment(),
     )
+
+
+def _job_payload(job: Job, *, include_log: bool) -> dict[str, Any]:
+    payload = job.to_dict()
+    if job.adapter == "comsol" and (
+        job.status == JobStatus.RUNNING or job.artifact_dir
+    ):
+        progress = inspect_job_progress(job).to_dict()
+        if not include_log:
+            progress["log_tail"] = []
+        payload["progress"] = progress
+    return payload
 
 
 def _config_from_payload(payload: dict[str, Any]) -> ComsolConfig:
