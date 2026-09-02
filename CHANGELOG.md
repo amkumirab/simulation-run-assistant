@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.16.0] - 2026-09-02
+
+### Added
+
+- Constrained ranking for successful runs within a completed batch
+- Maximize and minimize objectives over stored numeric outputs and formulas
+- Optional feasibility limits over both model inputs and result outputs
+- Native Rank results workspace with best-run highlighting and job details access
+- Privacy-safe CSV export with ranks, objective values, constraints, and inputs
+- Deterministic tie handling and explicit missing-value and rejection totals
+- Tests for ranking directions, mixed constraints, filtering, validation, and CSV output
+
+### Changed
+
+- Native result analysis now separates visual comparison from design selection
+- Package version increased to 0.16.0
+
 ## [0.15.0] - 2026-08-31
 
 ### Added

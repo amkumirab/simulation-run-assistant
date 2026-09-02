@@ -41,6 +41,12 @@ from simulation_assistant.profiles import (
     missing_local_paths,
     write_sanitized_profile_template,
 )
+from simulation_assistant.ranking import (
+    RankingConstraint,
+    RankingResult,
+    rank_sweep_results,
+    write_ranking_csv,
+)
 from simulation_assistant.runner import SimulationRunner
 from simulation_assistant.storage import JobStore
 from simulation_assistant.sweeps import (
@@ -163,6 +169,11 @@ class DesktopApp:
         self.formula_rows: list[tuple[ttk.Frame, tk.StringVar, tk.StringVar]] = []
         self.active_formula_entry: ttk.Entry | None = None
         self.current_comparison_rows: list[dict[str, Any]] = []
+        self.current_ranking_result: RankingResult | None = None
+        self.ranking_constraint_rows: list[
+            tuple[ttk.Frame, tk.StringVar, tk.StringVar, tk.StringVar, ttk.Combobox]
+        ] = []
+        self.ranking_field_lookup: dict[str, tuple[str, str]] = {}
         self.busy = False
         self._ignore_connection_changes = False
 
@@ -290,6 +301,12 @@ class DesktopApp:
         self.compare_batch_var = tk.StringVar(value="All batches")
         self.compare_x_var = tk.StringVar()
         self.compare_best_var = tk.StringVar(value="Choose an output metric to compare runs.")
+        self.ranking_batch_var = tk.StringVar()
+        self.ranking_objective_var = tk.StringVar()
+        self.ranking_direction_var = tk.StringVar(value="Maximize")
+        self.ranking_summary_var = tk.StringVar(
+            value="Choose a completed batch and output objective."
+        )
         self.sweep_summary_var = tk.StringVar(value="1 simulation state")
         self.queue_status_var = tk.StringVar(value="Queue status unavailable")
 
@@ -343,12 +360,15 @@ class DesktopApp:
         workspace = ScrollablePage(self.notebook)
         runs = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 12, 0, 0))
         compare = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 12, 0, 0))
+        ranking = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 12, 0, 0))
         self.notebook.add(workspace, text="Workspace")
         self.notebook.add(runs, text="Runs")
         self.notebook.add(compare, text="Compare runs")
+        self.notebook.add(ranking, text="Rank results")
         self._build_workspace(workspace.inner)
         self._build_runs_tab(runs)
         self._build_compare(compare)
+        self._build_ranking(ranking)
 
     def _build_sidebar(self) -> None:
         sidebar = tk.Frame(self.root, background=COLORS["navy"], width=226)
@@ -938,6 +958,151 @@ class DesktopApp:
                 stretch=column in {"batch", "parameters"},
             )
         self.compare_tree.grid(row=2, column=0, sticky="nsew")
+
+    def _build_ranking(self, parent: ttk.Frame) -> None:
+        parent.grid_columnconfigure(0, weight=1)
+        parent.grid_rowconfigure(2, weight=1)
+
+        header = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        header.grid_columnconfigure(0, weight=1)
+        ttk.Label(
+            header,
+            text="Rank completed sweep results",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, columnspan=6, sticky="w")
+        ttk.Label(
+            header,
+            text=(
+                "Find the strongest feasible run using one objective and optional "
+                "input or output limits."
+            ),
+            style="CardText.TLabel",
+        ).grid(row=1, column=0, columnspan=6, sticky="w", pady=(3, 12))
+        for column in (1, 3):
+            header.grid_columnconfigure(column, weight=1)
+        ttk.Label(header, text="Batch", style="Field.TLabel").grid(
+            row=2, column=0, sticky="w", padx=(0, 7)
+        )
+        self.ranking_batch = ttk.Combobox(
+            header,
+            textvariable=self.ranking_batch_var,
+            state="readonly",
+            width=20,
+        )
+        self.ranking_batch.grid(row=2, column=1, sticky="ew")
+        self.ranking_batch.bind("<<ComboboxSelected>>", self._ranking_batch_changed)
+        ttk.Label(header, text="Objective", style="Field.TLabel").grid(
+            row=2, column=2, sticky="e", padx=(14, 7)
+        )
+        self.ranking_objective = ttk.Combobox(
+            header,
+            textvariable=self.ranking_objective_var,
+            state="readonly",
+            width=25,
+        )
+        self.ranking_objective.grid(row=2, column=3, sticky="ew")
+        self.ranking_objective.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._calculate_ranking(show_errors=False),
+        )
+        ttk.Label(header, text="Direction", style="Field.TLabel").grid(
+            row=2, column=4, sticky="e", padx=(14, 7)
+        )
+        self.ranking_direction = ttk.Combobox(
+            header,
+            textvariable=self.ranking_direction_var,
+            values=("Maximize", "Minimize"),
+            state="readonly",
+            width=10,
+        )
+        self.ranking_direction.grid(row=2, column=5, sticky="e")
+        self.ranking_direction.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self._calculate_ranking(show_errors=False),
+        )
+
+        constraints = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        constraints.grid(row=1, column=0, sticky="ew", pady=(0, 14))
+        constraints.grid_columnconfigure(0, weight=1)
+        constraint_header = ttk.Frame(constraints, style="Card.TFrame")
+        constraint_header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        constraint_header.grid_columnconfigure(0, weight=1)
+        ttk.Label(
+            constraint_header,
+            text="Feasibility constraints",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            constraint_header,
+            text="Numeric values use the unit already stored by the model.",
+            style="CardText.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ttk.Button(
+            constraint_header,
+            text="Clear",
+            style="Secondary.TButton",
+            command=self._clear_ranking_constraints,
+        ).grid(row=0, column=1, rowspan=2, sticky="e")
+        ttk.Button(
+            constraint_header,
+            text="+ Add constraint",
+            style="Secondary.TButton",
+            command=self._add_ranking_constraint,
+        ).grid(row=0, column=2, rowspan=2, sticky="e", padx=(8, 0))
+        self.ranking_constraints_frame = ttk.Frame(
+            constraints, style="Card.TFrame"
+        )
+        self.ranking_constraints_frame.grid(row=1, column=0, sticky="ew")
+        self.ranking_constraints_frame.grid_columnconfigure(0, weight=1)
+        self._add_ranking_constraint()
+
+        results = ttk.Frame(parent, style="Card.TFrame", padding=18)
+        results.grid(row=2, column=0, sticky="nsew")
+        results.grid_columnconfigure(0, weight=1)
+        results.grid_rowconfigure(1, weight=1)
+        result_header = ttk.Frame(results, style="Card.TFrame")
+        result_header.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        result_header.grid_columnconfigure(0, weight=1)
+        ttk.Label(
+            result_header,
+            textvariable=self.ranking_summary_var,
+            style="CardText.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Button(
+            result_header,
+            text="Export CSV",
+            style="Secondary.TButton",
+            command=self._export_ranking,
+        ).grid(row=0, column=1, sticky="e")
+        ttk.Button(
+            result_header,
+            text="Apply ranking",
+            style="Primary.TButton",
+            command=lambda: self._calculate_ranking(show_errors=True),
+        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+
+        self.ranking_tree = ttk.Treeview(
+            results,
+            columns=("rank", "job", "objective", "constraints", "parameters", "finished"),
+            show="headings",
+        )
+        for column, heading, width in (
+            ("rank", "RANK", 60),
+            ("job", "JOB", 65),
+            ("objective", "OBJECTIVE VALUE", 145),
+            ("constraints", "CONSTRAINT VALUES", 300),
+            ("parameters", "INPUT STATE", 400),
+            ("finished", "FINISHED", 160),
+        ):
+            self.ranking_tree.heading(column, text=heading)
+            self.ranking_tree.column(
+                column,
+                width=width,
+                stretch=column in {"constraints", "parameters"},
+            )
+        self.ranking_tree.grid(row=1, column=0, sticky="nsew")
+        self.ranking_tree.bind("<Double-1>", self._open_ranked_job)
 
     def _field_label(self, parent: ttk.Frame, text: str, row: int, column: int) -> None:
         ttk.Label(parent, text=text, style="Field.TLabel").grid(
@@ -2691,6 +2856,283 @@ class DesktopApp:
         self.refresh_jobs()
         self.activity_var.set(f"Job #{job_id} was returned to the queue.")
 
+    def _add_ranking_constraint(self) -> None:
+        if not hasattr(self, "ranking_constraints_frame"):
+            return
+        if len(self.ranking_constraint_rows) >= 8:
+            messagebox.showinfo(
+                "Rank results",
+                "A ranking can contain at most eight constraints.",
+                parent=self.root,
+            )
+            return
+        frame = ttk.Frame(self.ranking_constraints_frame, style="Card.TFrame")
+        frame.grid(
+            row=len(self.ranking_constraint_rows),
+            column=0,
+            sticky="ew",
+            pady=(0, 7),
+        )
+        frame.grid_columnconfigure(0, weight=1)
+        field_var = tk.StringVar()
+        operator_var = tk.StringVar(value="<=")
+        threshold_var = tk.StringVar()
+        field = ttk.Combobox(
+            frame,
+            textvariable=field_var,
+            values=list(self.ranking_field_lookup),
+            state="readonly",
+            width=34,
+        )
+        field.grid(row=0, column=0, sticky="ew")
+        ttk.Combobox(
+            frame,
+            textvariable=operator_var,
+            values=("<=", ">=", "<", ">"),
+            state="readonly",
+            width=5,
+        ).grid(row=0, column=1, padx=(8, 0))
+        ttk.Entry(
+            frame,
+            textvariable=threshold_var,
+            width=18,
+        ).grid(row=0, column=2, padx=(8, 0))
+        ttk.Button(
+            frame,
+            text="Remove",
+            style="Secondary.TButton",
+            command=lambda: self._remove_ranking_constraint(frame),
+        ).grid(row=0, column=3, padx=(8, 0))
+        self.ranking_constraint_rows.append(
+            (frame, field_var, operator_var, threshold_var, field)
+        )
+        self._regrid_ranking_constraints()
+
+    def _remove_ranking_constraint(self, frame: ttk.Frame) -> None:
+        for row in list(self.ranking_constraint_rows):
+            if row[0] is frame:
+                self.ranking_constraint_rows.remove(row)
+                frame.destroy()
+                break
+        if not self.ranking_constraint_rows:
+            self._add_ranking_constraint()
+        else:
+            self._regrid_ranking_constraints()
+
+    def _regrid_ranking_constraints(self) -> None:
+        for index, row in enumerate(self.ranking_constraint_rows):
+            row[0].grid_configure(row=index)
+
+    def _clear_ranking_constraints(self) -> None:
+        for frame, _field, _operator, _threshold, _widget in self.ranking_constraint_rows:
+            frame.destroy()
+        self.ranking_constraint_rows.clear()
+        self._add_ranking_constraint()
+        self._calculate_ranking(show_errors=False)
+
+    def _refresh_ranking_options(self) -> None:
+        if not hasattr(self, "ranking_batch"):
+            return
+        successful_jobs = self.store.list(status=JobStatus.SUCCEEDED, limit=500)
+        batches = list(dict.fromkeys(job.batch_name for job in successful_jobs))
+        self.ranking_batch.configure(values=batches)
+        if not batches:
+            self.ranking_batch_var.set("")
+            self.ranking_objective_var.set("")
+            self.ranking_objective.configure(values=[])
+            self.ranking_field_lookup = {}
+            self.current_ranking_result = None
+            self.ranking_tree.delete(*self.ranking_tree.get_children())
+            self.ranking_summary_var.set("No successful runs are available to rank.")
+            return
+        if self.ranking_batch_var.get() not in batches:
+            self.ranking_batch_var.set(batches[0])
+        batch_name = self.ranking_batch_var.get()
+        batch_jobs = [job for job in successful_jobs if job.batch_name == batch_name]
+
+        objective_names = sorted(
+            {
+                str(name)
+                for job in batch_jobs
+                for name, value in (job.result or {}).get("metrics", {}).items()
+                if (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and numeric_parameter_value(value) is not None
+                )
+            }
+        )
+        input_names = sorted(
+            {str(name) for job in batch_jobs for name in job.parameters}
+        )
+        self.ranking_objective.configure(values=objective_names)
+        if self.ranking_objective_var.get() not in objective_names:
+            formula_names = {
+                name
+                for job in batch_jobs
+                for name in job.output_formulas
+                if name in objective_names
+            }
+            selected = (
+                sorted(formula_names)[0]
+                if formula_names
+                else (objective_names[0] if objective_names else "")
+            )
+            self.ranking_objective_var.set(selected)
+
+        field_lookup: dict[str, tuple[str, str]] = {}
+        for name in input_names:
+            field_lookup[f"Input · {name}"] = ("input", name)
+        for name in objective_names:
+            field_lookup[f"Output · {name}"] = ("output", name)
+        self.ranking_field_lookup = field_lookup
+        options = list(field_lookup)
+        for _frame, field_var, _operator, _threshold, widget in self.ranking_constraint_rows:
+            widget.configure(values=options)
+            if field_var.get() not in field_lookup:
+                field_var.set("")
+        self._calculate_ranking(show_errors=False)
+
+    def _ranking_batch_changed(self, _event: tk.Event | None = None) -> None:
+        self._refresh_ranking_options()
+
+    def _collect_ranking_constraints(self) -> list[RankingConstraint]:
+        constraints: list[RankingConstraint] = []
+        keys: set[tuple[str, str]] = set()
+        for (
+            _frame,
+            field_var,
+            operator_var,
+            threshold_var,
+            _widget,
+        ) in self.ranking_constraint_rows:
+            label = field_var.get()
+            threshold_text = threshold_var.get().strip()
+            if not label and not threshold_text:
+                continue
+            if label not in self.ranking_field_lookup:
+                raise ValueError("Choose a field for every constraint")
+            if not threshold_text:
+                raise ValueError(f"Enter a threshold for {label}")
+            threshold = numeric_parameter_value(threshold_text)
+            if threshold is None:
+                raise ValueError(f"Constraint threshold for {label} must be numeric")
+            source, field = self.ranking_field_lookup[label]
+            key = (source, field)
+            if key in keys:
+                raise ValueError(f"Constraint field is duplicated: {label}")
+            keys.add(key)
+            constraints.append(
+                RankingConstraint(source, field, operator_var.get(), threshold)
+            )
+        return constraints
+
+    def _calculate_ranking(self, *, show_errors: bool) -> None:
+        if not hasattr(self, "ranking_tree"):
+            return
+        batch_name = self.ranking_batch_var.get()
+        objective = self.ranking_objective_var.get()
+        if not batch_name or not objective:
+            self.current_ranking_result = None
+            self.ranking_tree.delete(*self.ranking_tree.get_children())
+            self.ranking_summary_var.set(
+                "Choose a completed batch and numeric output objective."
+            )
+            return
+        try:
+            constraints = self._collect_ranking_constraints()
+            result = rank_sweep_results(
+                self.store.list(status=JobStatus.SUCCEEDED, limit=500),
+                objective,
+                direction=self.ranking_direction_var.get().casefold(),
+                constraints=constraints,
+                batch_name=batch_name,
+            )
+        except ValueError as exc:
+            self.current_ranking_result = None
+            if show_errors:
+                messagebox.showerror("Rank results", str(exc), parent=self.root)
+            else:
+                self.ranking_summary_var.set(str(exc))
+            return
+
+        self.current_ranking_result = result
+        self.ranking_tree.delete(*self.ranking_tree.get_children())
+        if result.rows:
+            best = result.rows[0]
+            self.ranking_summary_var.set(
+                f"Best {objective}: {self._format_number(best.objective_value)} at "
+                f"Job #{best.job_id} · {result.qualifying_jobs} qualified · "
+                f"{result.rejected_jobs} rejected · {result.missing_values} missing"
+            )
+        else:
+            self.ranking_summary_var.set(
+                f"No run satisfies every constraint · {result.rejected_jobs} rejected · "
+                f"{result.missing_values} missing"
+            )
+        constraint_labels = {
+            constraint.key: constraint.field for constraint in constraints
+        }
+        for row in result.rows[:100]:
+            parameter_text = ", ".join(
+                f"{name}={value}"
+                for name, value in list(row.parameters.items())[:8]
+            )
+            constraint_text = ", ".join(
+                f"{constraint_labels.get(name, name)}={self._format_number(value)}"
+                for name, value in row.constraint_values.items()
+            ) or "No constraints"
+            item = self.ranking_tree.insert(
+                "",
+                "end",
+                iid=str(row.job_id),
+                values=(
+                    row.rank,
+                    f"#{row.job_id}",
+                    self._format_number(row.objective_value),
+                    constraint_text,
+                    parameter_text,
+                    row.finished_at.replace("T", " "),
+                ),
+            )
+            if row.rank == 1:
+                self.ranking_tree.item(item, tags=("best",))
+        self.ranking_tree.tag_configure("best", background=COLORS["teal_soft"])
+
+    def _open_ranked_job(self, _event: tk.Event) -> None:
+        selection = self.ranking_tree.selection()
+        if selection:
+            self._show_job(self.store.get(int(selection[0])))
+
+    def _export_ranking(self) -> None:
+        self._calculate_ranking(show_errors=True)
+        if self.current_ranking_result is None or not self.current_ranking_result.rows:
+            messagebox.showinfo(
+                "Export ranking",
+                "There are no ranked results to export.",
+                parent=self.root,
+            )
+            return
+        safe_name = re.sub(
+            r"[^A-Za-z0-9_.-]+",
+            "-",
+            f"{self.ranking_batch_var.get()}-{self.ranking_objective_var.get()}-ranking",
+        ).strip("-")
+        selected = filedialog.asksaveasfilename(
+            title="Export ranking CSV",
+            defaultextension=".csv",
+            initialfile=f"{safe_name or 'ranking'}.csv",
+            filetypes=[("CSV file", "*.csv"), ("All files", "*")],
+        )
+        if not selected:
+            return
+        try:
+            output = write_ranking_csv(selected, self.current_ranking_result)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Export ranking", str(exc), parent=self.root)
+            return
+        self.activity_var.set(f"Result ranking exported to {output.name}.")
+
     def refresh_comparison(self) -> None:
         if not hasattr(self, "compare_metric"):
             return
@@ -2727,6 +3169,7 @@ class DesktopApp:
             selected = sorted(formula_names)[0] if formula_names else (values[0] if values else "")
             self.compare_metric_var.set(selected)
         self._refresh_comparison_rows()
+        self._refresh_ranking_options()
 
     def _selected_comparison_batch(self) -> str | None:
         selected = self.compare_batch_var.get()

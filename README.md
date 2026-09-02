@@ -39,6 +39,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Duplicate-run preflight with reusable-result detection and new-job-only estimates
 - Safe custom output formulas and comparison across successful simulation states
 - Batch-filtered comparison charts, highest-value highlighting, and CSV export
+- Constrained sweep ranking with maximize/minimize objectives and CSV export
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -178,6 +179,14 @@ runtime from recent successful COMSOL runs. Sweep jobs run one at a time to
 respect the default local license-seat workflow. The **Compare runs** tab can
 filter one batch, plot a numeric input against an output metric, identify the
 highest result, and export the visible rows as CSV.
+
+Use **Rank results** after a sweep to select a numeric output or computed formula
+as the objective, choose **Maximize** or **Minimize**, and add optional limits on
+model inputs or result outputs. Runs with missing values are reported separately
+from runs rejected by a constraint. The best feasible run is highlighted;
+double-click any ranked row to open its complete job details. Ranking CSV files
+contain the objective, evaluated constraint values, and input state without local
+artifact paths. See [`docs/RESULT_RANKING.md`](docs/RESULT_RANKING.md).
 
 Computed outputs are safe arithmetic expressions over normalized numeric result
 metrics. For example:
@@ -344,6 +353,7 @@ src/simulation_assistant/
 |-- notifications.py
 |-- plot_artifacts.py # Safe plot lookup and native preview helpers
 |-- profiles.py     # Local workspace profiles and sanitized template export
+|-- ranking.py      # Constrained objective ranking and CSV export
 |-- telegram_api.py # Minimal Telegram Bot API client
 |-- telegram_bot.py # Authorized long-polling command bot
 |-- reporting.py    # JSON and SVG artifacts
