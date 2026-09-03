@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.17.0] - 2026-09-03
+
+### Added
+
+- Unit-aware scalar parsing with normalization to SI reference units
+- Supported WPT quantities for geometry, frequency, angle, time, electrical values,
+  magnetic flux density, and conductivity
+- Explicit physical-dimension checks for constrained result ranking
+- SI unit labels for normalized comparison axes and ranking constraint values
+- Tests for equivalent units, invalid expressions, non-finite values, and mixed dimensions
+
+### Changed
+
+- Numeric parameter comparison no longer uses an unvalidated leading-number prefix
+- Dimensional ranking thresholds now require a compatible explicit unit
+- Unsupported or dimensionally inconsistent values are excluded from numeric analysis
+- Ranking CSV constraint columns identify their normalized SI unit
+- Package version increased to 0.17.0
+
 ## [0.16.0] - 2026-09-02
 
 ### Added

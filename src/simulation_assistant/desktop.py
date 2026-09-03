@@ -41,6 +41,11 @@ from simulation_assistant.profiles import (
     missing_local_paths,
     write_sanitized_profile_template,
 )
+from simulation_assistant.quantities import (
+    common_quantity_dimension,
+    parse_quantity,
+    reference_unit,
+)
 from simulation_assistant.ranking import (
     RankingConstraint,
     RankingResult,
@@ -53,7 +58,6 @@ from simulation_assistant.sweeps import (
     build_parameter_sets,
     comparison_rows,
     estimate_sequential_seconds,
-    numeric_parameter_value,
     parse_sweep_values,
     write_comparison_csv,
 )
@@ -174,6 +178,7 @@ class DesktopApp:
             tuple[ttk.Frame, tk.StringVar, tk.StringVar, tk.StringVar, ttk.Combobox]
         ] = []
         self.ranking_field_lookup: dict[str, tuple[str, str]] = {}
+        self.ranking_field_dimensions: dict[str, str | None] = {}
         self.busy = False
         self._ignore_connection_changes = False
 
@@ -1035,7 +1040,10 @@ class DesktopApp:
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(
             constraint_header,
-            text="Numeric values use the unit already stored by the model.",
+            text=(
+                "Dimensional inputs require an explicit supported unit; "
+                "comparisons are normalized to SI."
+            ),
             style="CardText.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
         ttk.Button(
@@ -2941,6 +2949,7 @@ class DesktopApp:
             self.ranking_objective_var.set("")
             self.ranking_objective.configure(values=[])
             self.ranking_field_lookup = {}
+            self.ranking_field_dimensions = {}
             self.current_ranking_result = None
             self.ranking_tree.delete(*self.ranking_tree.get_children())
             self.ranking_summary_var.set("No successful runs are available to rank.")
@@ -2958,11 +2967,11 @@ class DesktopApp:
                 if (
                     isinstance(value, (int, float))
                     and not isinstance(value, bool)
-                    and numeric_parameter_value(value) is not None
+                    and parse_quantity(value) is not None
                 )
             }
         )
-        input_names = sorted(
+        candidate_input_names = sorted(
             {str(name) for job in batch_jobs for name in job.parameters}
         )
         self.ranking_objective.configure(values=objective_names)
@@ -2981,11 +2990,24 @@ class DesktopApp:
             self.ranking_objective_var.set(selected)
 
         field_lookup: dict[str, tuple[str, str]] = {}
-        for name in input_names:
-            field_lookup[f"Input · {name}"] = ("input", name)
+        field_dimensions: dict[str, str | None] = {}
+        for name in candidate_input_names:
+            values = [job.parameters[name] for job in batch_jobs if name in job.parameters]
+            try:
+                dimension = common_quantity_dimension(values)
+            except ValueError:
+                continue
+            unit = reference_unit(dimension)
+            suffix = f" [{unit}]" if unit else ""
+            label = f"Input · {name}{suffix}"
+            field_lookup[label] = ("input", name)
+            field_dimensions[label] = dimension
         for name in objective_names:
-            field_lookup[f"Output · {name}"] = ("output", name)
+            label = f"Output · {name}"
+            field_lookup[label] = ("output", name)
+            field_dimensions[label] = None
         self.ranking_field_lookup = field_lookup
+        self.ranking_field_dimensions = field_dimensions
         options = list(field_lookup)
         for _frame, field_var, _operator, _threshold, widget in self.ranking_constraint_rows:
             widget.configure(values=options)
@@ -3014,17 +3036,29 @@ class DesktopApp:
                 raise ValueError("Choose a field for every constraint")
             if not threshold_text:
                 raise ValueError(f"Enter a threshold for {label}")
-            threshold = numeric_parameter_value(threshold_text)
-            if threshold is None:
-                raise ValueError(f"Constraint threshold for {label} must be numeric")
             source, field = self.ranking_field_lookup[label]
+            constraint = RankingConstraint.from_value(
+                source,
+                field,
+                operator_var.get(),
+                threshold_text,
+            )
+            expected_dimension = self.ranking_field_dimensions[label]
+            if constraint.dimension != expected_dimension:
+                unit = reference_unit(expected_dimension)
+                if unit:
+                    raise ValueError(
+                        f"Constraint threshold for {label} must include a compatible "
+                        f"unit such as [{unit}]"
+                    )
+                raise ValueError(
+                    f"Constraint threshold for {label} must not include a physical unit"
+                )
             key = (source, field)
             if key in keys:
                 raise ValueError(f"Constraint field is duplicated: {label}")
             keys.add(key)
-            constraints.append(
-                RankingConstraint(source, field, operator_var.get(), threshold)
-            )
+            constraints.append(constraint)
         return constraints
 
     def _calculate_ranking(self, *, show_errors: bool) -> None:
@@ -3070,16 +3104,18 @@ class DesktopApp:
                 f"No run satisfies every constraint · {result.rejected_jobs} rejected · "
                 f"{result.missing_values} missing"
             )
-        constraint_labels = {
-            constraint.key: constraint.field for constraint in constraints
-        }
+        constraint_labels = {constraint.key: constraint for constraint in constraints}
         for row in result.rows[:100]:
             parameter_text = ", ".join(
                 f"{name}={value}"
                 for name, value in list(row.parameters.items())[:8]
             )
             constraint_text = ", ".join(
-                f"{constraint_labels.get(name, name)}={self._format_number(value)}"
+                self._format_constraint_value(
+                    constraint_labels.get(name),
+                    name,
+                    value,
+                )
                 for name, value in row.constraint_values.items()
             ) or "No constraints"
             item = self.ranking_tree.insert(
@@ -3098,6 +3134,18 @@ class DesktopApp:
             if row.rank == 1:
                 self.ranking_tree.item(item, tags=("best",))
         self.ranking_tree.tag_configure("best", background=COLORS["teal_soft"])
+
+    def _format_constraint_value(
+        self,
+        constraint: RankingConstraint | None,
+        fallback: str,
+        value: float,
+    ) -> str:
+        if constraint is None:
+            return f"{fallback}={self._format_number(value)}"
+        unit = reference_unit(constraint.dimension)
+        suffix = f" {unit}" if unit else ""
+        return f"{constraint.field}={self._format_number(value)}{suffix}"
 
     def _open_ranked_job(self, _event: tk.Event) -> None:
         selection = self.ranking_tree.selection()
@@ -3244,11 +3292,15 @@ class DesktopApp:
 
         x_name = self.compare_x_var.get()
         points: list[tuple[float, float, int]] = []
+        x_dimensions: set[str | None] = set()
         for row in rows:
             if x_name == "Job ID":
                 x_value = float(row["job_id"])
             else:
-                x_value = numeric_parameter_value(dict(row["parameters"]).get(x_name))
+                quantity = parse_quantity(dict(row["parameters"]).get(x_name))
+                x_value = quantity.si_value if quantity else None
+                if quantity:
+                    x_dimensions.add(quantity.dimension)
             if x_value is not None:
                 points.append((x_value, float(row["value"]), int(row["job_id"])))
         if not points:
@@ -3257,6 +3309,15 @@ class DesktopApp:
                 height / 2,
                 text=f"'{x_name}' does not contain numeric values for this chart.",
                 fill=COLORS["muted"],
+                font=("Segoe UI", 10),
+            )
+            return
+        if len(x_dimensions) > 1:
+            canvas.create_text(
+                width / 2,
+                height / 2,
+                text=f"'{x_name}' contains incompatible physical dimensions.",
+                fill=COLORS["red"],
                 font=("Segoe UI", 10),
             )
             return
@@ -3315,10 +3376,13 @@ class DesktopApp:
             fill=COLORS["muted"],
             font=("Segoe UI", 8),
         )
+        x_dimension = next(iter(x_dimensions), None)
+        x_unit = reference_unit(x_dimension)
+        x_label = f"{x_name} [{x_unit}]" if x_unit else x_name
         canvas.create_text(
             (left + right) / 2,
             height - 10,
-            text=x_name,
+            text=x_label,
             fill=COLORS["muted"],
             font=("Segoe UI Semibold", 8),
         )

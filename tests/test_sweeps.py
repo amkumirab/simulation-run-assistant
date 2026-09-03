@@ -80,9 +80,12 @@ class SweepTests(unittest.TestCase):
         self.assertEqual(estimate_sequential_seconds(4, jobs), 60.0)
 
     def test_extracts_numeric_parameter_values_with_units(self) -> None:
-        self.assertEqual(numeric_parameter_value("85[kHz]"), 85.0)
+        self.assertEqual(numeric_parameter_value("85[kHz]"), 85000.0)
         self.assertEqual(numeric_parameter_value(" -1.5e-3 [m]"), -1.5e-3)
+        self.assertEqual(numeric_parameter_value("15[cm]"), 0.15)
+        self.assertEqual(numeric_parameter_value("0.15[m]"), 0.15)
         self.assertIsNone(numeric_parameter_value("automatic"))
+        self.assertIsNone(numeric_parameter_value("15[unknown]"))
         self.assertIsNone(numeric_parameter_value("1e999"))
 
     def test_filters_comparison_and_exports_dynamic_parameter_columns(self) -> None:

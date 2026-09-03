@@ -40,6 +40,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Safe custom output formulas and comparison across successful simulation states
 - Batch-filtered comparison charts, highest-value highlighting, and CSV export
 - Constrained sweep ranking with maximize/minimize objectives and CSV export
+- Unit-aware parameter comparison with SI normalization and dimension checks
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -188,6 +189,12 @@ double-click any ranked row to open its complete job details. Ranking CSV files
 contain the objective, evaluated constraint values, and input state without local
 artifact paths. See [`docs/RESULT_RANKING.md`](docs/RESULT_RANKING.md).
 
+Dimensional parameter values are normalized before charting or constraint
+evaluation, so `0.15[m]`, `15[cm]`, and `150[mm]` compare as the same length.
+Unknown units, non-finite values, and incompatible physical dimensions are not
+silently reduced to their leading number. See
+[`docs/QUANTITIES.md`](docs/QUANTITIES.md) for supported units and safety rules.
+
 Computed outputs are safe arithmetic expressions over normalized numeric result
 metrics. For example:
 
@@ -327,19 +334,27 @@ sim-assistant comsol-check
 See [`docs/COMSOL_INTEGRATION.md`](docs/COMSOL_INTEGRATION.md) for the full
 configuration and model contract.
 
-## Roadmap
+## Scientific roadmap
 
-The repository intentionally leaves useful, portfolio-worthy increments for
-future commits:
+Future increments prioritize trustworthy WPT results before expanding secondary
+interfaces or deployment options:
 
-- COMSOL result-export contracts for additional model families
-- Optional Telegram delivery for selected result plots
-- Attach result plots to Telegram messages
-- Parallel workers with configurable license-seat limits
-- Graceful active-process stop with solver-aware cleanup
-- Multi-objective ranking and convergence diagnostics
-- Authentication before any non-local deployment
-- Container image and scheduled worker mode
+1. Define a versioned WPT model contract with visible design inputs, internal
+   parameters, required outputs, units, table tags, and validation limits.
+2. Discover COMSOL job sequences, numerical evaluations, and result tables during
+   model inspection, then report contract compatibility before a run.
+3. Add a scientific validation gate for freshness, required metrics, reciprocity,
+   physical bounds, mesh quality, and solver warnings.
+4. Add an explicit storage-retention policy before running large production
+   sweeps with copied MPH files.
+5. Run and document the baseline 36-state gap, offset, and tilt sweep with the
+   production IBC model.
+6. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
+7. Add robust grouped objectives across misalignment states.
+8. Validate selected designs against a higher-fidelity volume reference model.
+
+Production and reference MPH files remain local and are never committed to this
+repository.
 
 ## Project structure
 
@@ -353,6 +368,7 @@ src/simulation_assistant/
 |-- notifications.py
 |-- plot_artifacts.py # Safe plot lookup and native preview helpers
 |-- profiles.py     # Local workspace profiles and sanitized template export
+|-- quantities.py   # Unit parsing, dimensions, and SI normalization
 |-- ranking.py      # Constrained objective ranking and CSV export
 |-- telegram_api.py # Minimal Telegram Bot API client
 |-- telegram_bot.py # Authorized long-polling command bot

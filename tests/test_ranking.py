@@ -61,7 +61,7 @@ class RankingTests(unittest.TestCase):
             self.jobs,
             "coupling",
             constraints=[
-                RankingConstraint("input", "gap", "<=", 12),
+                RankingConstraint.from_value("input", "gap", "<=", "120[mm]"),
                 RankingConstraint("output", "losses", "<", 10),
             ],
             batch_name="charger-sweep",
@@ -93,7 +93,9 @@ class RankingTests(unittest.TestCase):
         result = rank_sweep_results(
             jobs,
             "coupling",
-            constraints=[RankingConstraint("input", "gap", ">", 0)],
+            constraints=[
+                RankingConstraint.from_value("input", "gap", ">", "0[m]")
+            ],
             batch_name="charger-sweep",
         )
 
@@ -112,6 +114,8 @@ class RankingTests(unittest.TestCase):
             rank_sweep_results(self.jobs, "coupling", limit=0)
         with self.assertRaisesRegex(ValueError, "finite"):
             RankingConstraint("output", "losses", "<", float("nan"))
+        with self.assertRaisesRegex(ValueError, "supported"):
+            RankingConstraint.from_value("input", "gap", "<", "12[parsec]")
 
     def test_exports_ranked_inputs_and_constraint_values(self) -> None:
         result = rank_sweep_results(
@@ -130,6 +134,31 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(rows[0]["constraint:output:losses"], "9.0")
         self.assertNotIn("artifact_dir", rows[0])
         self.assertNotIn("artifacts", str(rows))
+
+    def test_normalizes_constraint_units_and_rejects_mixed_dimensions(self) -> None:
+        jobs = [
+            make_job(1, parameters={"gap": "0.15[m]"}, metrics={"coupling": 0.7}),
+            make_job(2, parameters={"gap": "150[mm]"}, metrics={"coupling": 0.8}),
+            make_job(3, parameters={"gap": "14[cm]"}, metrics={"coupling": 0.6}),
+            make_job(4, parameters={"gap": "85[kHz]"}, metrics={"coupling": 0.9}),
+        ]
+        result = rank_sweep_results(
+            jobs,
+            "coupling",
+            constraints=[
+                RankingConstraint.from_value("input", "gap", "<=", "15[cm]")
+            ],
+        )
+
+        self.assertEqual([row.job_id for row in result.rows], [2, 1, 3])
+        self.assertEqual(result.missing_values, 1)
+        self.assertAlmostEqual(result.rows[0].constraint_values["input:gap"], 0.15)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = write_ranking_csv(Path(temp_dir) / "units.csv", result)
+            with path.open(encoding="utf-8", newline="") as handle:
+                header = next(csv.reader(handle))
+        self.assertIn("constraint:input:gap[m]", header)
 
 
 if __name__ == "__main__":

@@ -39,9 +39,15 @@ Objectives must be finite numeric outputs. Constraints may use:
 - **Input** fields from the parameter state recorded for each job.
 - **Output** fields from COMSOL metrics or computed-output formulas.
 
-Parameter strings such as `15[cm]` are compared using their numeric part. Enter a
-threshold in the same unit and scale used by the selected model field. The ranking
-engine does not convert between unit systems.
+Dimensional input values are converted to their SI reference unit before
+comparison. For example, `0.15[m]`, `15[cm]`, and `150[mm]` are equal. A
+dimensional input constraint must include an explicit compatible unit. A length
+field therefore accepts `15[cm]` or `0.15[m]`, but rejects a bare `15` or a
+frequency threshold.
+
+Output metrics do not yet carry separate unit metadata. Until a model contract
+defines those units, output thresholds use the numeric scale stored under the
+metric name and must not include a physical unit.
 
 ## Result totals
 
@@ -55,6 +61,7 @@ Failed, cancelled, queued, and running jobs are not considered.
 ## CSV export and privacy
 
 The exported CSV contains rank, job ID, batch, objective value, recorded inputs,
-evaluated constraint values, and completion time. It deliberately excludes model,
+evaluated constraint values, and completion time. Constraint columns include the
+SI unit used for normalized values. The file deliberately excludes model,
 executable, artifact, and solver-log paths. Review parameter and output names
 before sharing a report when the model contract is confidential.

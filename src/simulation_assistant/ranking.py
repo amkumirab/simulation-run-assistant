@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable
 
-from simulation_assistant.sweeps import numeric_parameter_value
+from simulation_assistant.quantities import parse_quantity, reference_unit
 from simulation_assistant.types import Job, JobStatus
 
 
@@ -20,6 +20,7 @@ class RankingConstraint:
     field: str
     operator: str
     threshold: float
+    dimension: str | None = None
 
     def __post_init__(self) -> None:
         source = self.source.strip().casefold()
@@ -37,10 +38,31 @@ class RankingConstraint:
             or not math.isfinite(float(self.threshold))
         ):
             raise ValueError("Constraint threshold must be finite")
+        if self.dimension is not None and reference_unit(self.dimension) is None:
+            raise ValueError(f"Unsupported constraint dimension: {self.dimension}")
         object.__setattr__(self, "source", source)
         object.__setattr__(self, "field", field)
         object.__setattr__(self, "operator", operator)
         object.__setattr__(self, "threshold", float(self.threshold))
+
+    @classmethod
+    def from_value(
+        cls,
+        source: str,
+        field: str,
+        operator: str,
+        threshold: Any,
+    ) -> RankingConstraint:
+        quantity = parse_quantity(threshold)
+        if quantity is None:
+            raise ValueError("Constraint threshold must use a supported finite quantity")
+        return cls(
+            source=source,
+            field=field,
+            operator=operator,
+            threshold=quantity.si_value,
+            dimension=quantity.dimension,
+        )
 
     @property
     def key(self) -> str:
@@ -48,7 +70,12 @@ class RankingConstraint:
 
     @property
     def label(self) -> str:
-        return f"{self.source.title()} {self.field} {self.operator} {self.threshold:g}"
+        unit = reference_unit(self.dimension)
+        suffix = f" {unit}" if unit else ""
+        return (
+            f"{self.source.title()} {self.field} {self.operator} "
+            f"{self.threshold:g}{suffix}"
+        )
 
 
 @dataclass(frozen=True)
@@ -66,6 +93,7 @@ class RankedRun:
 @dataclass(frozen=True)
 class RankingResult:
     rows: tuple[RankedRun, ...]
+    constraints: tuple[RankingConstraint, ...]
     considered_jobs: int
     qualifying_jobs: int
     rejected_jobs: int
@@ -117,10 +145,11 @@ def rank_sweep_results(
                 if constraint.source == "input"
                 else metrics.get(constraint.field)
             )
-            value = numeric_parameter_value(raw_value)
-            if value is None:
+            quantity = parse_quantity(raw_value)
+            if quantity is None or quantity.dimension != constraint.dimension:
                 unavailable = True
                 break
+            value = quantity.si_value
             values[constraint.key] = value
             if not _matches(value, constraint.operator, constraint.threshold):
                 failed = True
@@ -152,6 +181,7 @@ def rank_sweep_results(
     ranked = tuple(replace(row, rank=index) for index, row in enumerate(rows, 1))
     return RankingResult(
         rows=ranked,
+        constraints=tuple(constraint_list),
         considered_jobs=considered,
         qualifying_jobs=qualifying,
         rejected_jobs=rejected,
@@ -165,9 +195,14 @@ def write_ranking_csv(path: str | Path, result: RankingResult) -> Path:
     parameter_names = sorted(
         {name for row in result.rows for name in row.parameters}
     )
+    constraints = {constraint.key: constraint for constraint in result.constraints}
     constraint_names = sorted(
         {name for row in result.rows for name in row.constraint_values}
     )
+    constraint_headers = {
+        name: _constraint_csv_header(name, constraints.get(name))
+        for name in constraint_names
+    }
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
@@ -177,7 +212,7 @@ def write_ranking_csv(path: str | Path, result: RankingResult) -> Path:
         "objective",
         "objective_value",
         *[f"input:{name}" for name in parameter_names],
-        *[f"constraint:{name}" for name in constraint_names],
+        *[constraint_headers[name] for name in constraint_names],
         "finished_at",
     ]
     with output_path.open("w", encoding="utf-8", newline="") as handle:
@@ -196,7 +231,7 @@ def write_ranking_csv(path: str | Path, result: RankingResult) -> Path:
                         for name in parameter_names
                     },
                     **{
-                        f"constraint:{name}": row.constraint_values.get(name, "")
+                        constraint_headers[name]: row.constraint_values.get(name, "")
                         for name in constraint_names
                     },
                     "finished_at": row.finished_at,
@@ -219,3 +254,12 @@ def _matches(value: float, operator: str, threshold: float) -> bool:
         ">": value > threshold,
         ">=": value >= threshold,
     }[operator]
+
+
+def _constraint_csv_header(
+    key: str,
+    constraint: RankingConstraint | None,
+) -> str:
+    unit = reference_unit(constraint.dimension) if constraint else None
+    suffix = f"[{unit}]" if unit else ""
+    return f"constraint:{key}{suffix}"

@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from simulation_assistant.quantities import numeric_quantity_value
 from simulation_assistant.types import Job, JobStatus
 
 
@@ -17,7 +18,6 @@ _NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 _RANGE_PATTERN = re.compile(
     rf"^\s*({_NUMBER})\s*:\s*({_NUMBER})\s*:\s*({_NUMBER})\s*(\[[^\[\]]+\])?\s*$"
 )
-_NUMERIC_VALUE_PATTERN = re.compile(rf"^\s*({_NUMBER})")
 
 
 def parse_sweep_values(specification: str) -> list[str]:
@@ -138,19 +138,8 @@ def estimate_sequential_seconds(job_count: int, completed_jobs: Iterable[Job]) -
 
 
 def numeric_parameter_value(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        parsed = float(value)
-        return parsed if math.isfinite(parsed) else None
-    match = _NUMERIC_VALUE_PATTERN.match(str(value))
-    if not match:
-        return None
-    try:
-        parsed = float(match.group(1))
-        return parsed if math.isfinite(parsed) else None
-    except ValueError:
-        return None
+    """Return a finite scalar normalized to SI when it has a supported unit."""
+    return numeric_quantity_value(value)
 
 
 def comparison_rows(
