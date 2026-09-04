@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.18.0] - 2026-09-04
+
+### Added
+
+- Versioned JSON model contracts for COMSOL workflows
+- Ready, Warning, and Blocked compatibility reports in the native workspace
+- Design-input, internal-parameter, physics, target, dataset, table, and unit checks
+- Inclusive input limits with SI-normalized validation before queueing and execution
+- Stable contract output names bound to exact COMSOL table columns
+- CLI and environment configuration for model-contract validation
+- A documented WPT contract example and schema reference
+
+### Changed
+
+- Contracted desktop workspaces expose only declared design inputs
+- Workspace profiles can retain an optional local model-contract path
+- COMSOL inspection now catalogs available job sequences and datasets
+- Package version increased to 0.18.0
+
 ## [0.17.0] - 2026-09-03
 
 ### Added

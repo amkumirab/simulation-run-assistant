@@ -53,13 +53,14 @@ def build_comsol_run_context(
     study_tag: str | None,
     job_tag: str | None,
     plot_tags: Iterable[str] = (),
+    contract_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Build a path-free identity for one COMSOL model and output contract."""
     path = Path(model_path)
     stat = path.stat()
     target_kind = "job" if job_tag else "study"
     target_tag = job_tag or study_tag or "default"
-    return {
+    context = {
         "model": {
             "name": path.name,
             "size_bytes": stat.st_size,
@@ -68,6 +69,15 @@ def build_comsol_run_context(
         "target": {"kind": target_kind, "tag": target_tag},
         "plot_tags": sorted({str(tag) for tag in plot_tags}),
     }
+    if contract_path is not None:
+        contract = Path(contract_path)
+        contract_stat = contract.stat()
+        context["contract"] = {
+            "name": contract.name,
+            "size_bytes": contract_stat.st_size,
+            "sha256": hashlib.sha256(contract.read_bytes()).hexdigest(),
+        }
+    return context
 
 
 def build_run_signature(

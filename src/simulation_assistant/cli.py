@@ -101,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
     comsol_check.add_argument("--job", help="COMSOL job-sequence tag to run")
     comsol_check.add_argument("--timeout", type=int, help="Run timeout in seconds")
     comsol_check.add_argument("--cores", type=int, help="Number of COMSOL cores")
+    comsol_check.add_argument(
+        "--contract",
+        help="Path to a versioned model contract JSON file",
+    )
     return parser
 
 
@@ -188,6 +192,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 job_tag=args.job,
                 timeout_seconds=args.timeout,
                 cores=args.cores,
+                contract_path=args.contract,
             )
             print(json.dumps(check_comsol(config), indent=2))
     except (KeyError, OSError, RuntimeError, ValueError) as exc:

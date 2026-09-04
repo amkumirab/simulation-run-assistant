@@ -51,6 +51,26 @@ class RunPreflightTests(unittest.TestCase):
         self.assertEqual(self.context["plot_tags"], ["pg1", "pg2"])
         self.assertNotEqual(first, second)
 
+    def test_contract_revision_is_part_of_the_safe_run_identity(self) -> None:
+        contract = self.root / "model-contract.json"
+        contract.write_text('{"version":"1.0.0"}', encoding="utf-8")
+        first = build_comsol_run_context(
+            self.model,
+            study_tag="std1",
+            job_tag=None,
+            contract_path=contract,
+        )
+        contract.write_text('{"version":"2.0.0","changed":true}', encoding="utf-8")
+        second = build_comsol_run_context(
+            self.model,
+            study_tag="std1",
+            job_tag=None,
+            contract_path=contract,
+        )
+
+        self.assertNotEqual(first["contract"], second["contract"])
+        self.assertNotIn(str(self.root), json.dumps(second))
+
     def test_signature_is_stable_for_mapping_order(self) -> None:
         first = build_run_signature(
             "comsol",

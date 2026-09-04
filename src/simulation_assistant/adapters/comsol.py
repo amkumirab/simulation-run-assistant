@@ -16,6 +16,13 @@ from typing import Any, Callable
 from xml.etree import ElementTree
 
 from simulation_assistant.adapters.base import SimulationAdapter, SimulationCancelled
+from simulation_assistant.model_contract import (
+    apply_output_bindings,
+    column_unit,
+    evaluate_model_contract,
+    load_model_contract,
+    validate_contract_parameters,
+)
 from simulation_assistant.process_control import run_cancellable_process
 from simulation_assistant.types import SimulationResult
 
@@ -76,6 +83,7 @@ class ComsolConfig:
     timeout_seconds: int = 3600
     cores: int | None = None
     plot_tags: tuple[str, ...] = ()
+    contract_path: Path | None = None
 
     @classmethod
     def from_environment(
@@ -88,6 +96,7 @@ class ComsolConfig:
         timeout_seconds: int | None = None,
         cores: int | None = None,
         plot_tags: tuple[str, ...] | list[str] | None = None,
+        contract_path: str | Path | None = None,
     ) -> "ComsolConfig":
         executable_value = executable or os.getenv("COMSOL_EXECUTABLE")
         resolved_executable = (
@@ -117,6 +126,11 @@ class ComsolConfig:
             timeout_seconds=timeout_value,
             cores=core_value,
             plot_tags=tuple(plot_tags or ()),
+            contract_path=(
+                Path(contract_path or os.getenv("COMSOL_CONTRACT_PATH"))
+                if contract_path or os.getenv("COMSOL_CONTRACT_PATH")
+                else None
+            ),
         )
         config.validate()
         return config
@@ -135,6 +149,13 @@ class ComsolConfig:
         if self.cores is not None and self.cores < 1:
             raise ValueError("COMSOL core count must be greater than zero")
         _validate_plot_tag_syntax(self.plot_tags)
+        if self.contract_path is not None:
+            if not self.contract_path.is_file():
+                raise ValueError(
+                    f"Model contract was not found: {self.contract_path}"
+                )
+            if self.contract_path.suffix.lower() != ".json":
+                raise ValueError("Model contract must be a JSON file")
 
 
 @dataclass(frozen=True)
@@ -147,6 +168,8 @@ class ComsolModelInfo:
     required_products: list[str]
     parameters: dict[str, str]
     studies: list[dict[str, str]]
+    jobs: list[dict[str, str]]
+    datasets: list[dict[str, str]]
     numerical_features: list[dict[str, str]]
     plot_groups: list[dict[str, str]]
 
@@ -182,6 +205,28 @@ class ComsolAdapter(SimulationAdapter):
         model_info = inspect_mph(config.model_path)
         selected_study = _select_study(config.study_tag, config.job_tag, model_info)
         selected_plots = validate_plot_selection(config.plot_tags, model_info.plot_groups)
+        contract_report = None
+        if config.contract_path is not None:
+            contract = load_model_contract(config.contract_path)
+            try:
+                output_symbols = catalog_mph_output_symbols(config.model_path)
+            except ValueError:
+                output_symbols = []
+            contract_report = evaluate_model_contract(
+                contract,
+                model_info.to_dict(),
+                output_symbols,
+                selected_study=selected_study,
+                selected_job=config.job_tag,
+            )
+            if contract_report.blocked:
+                details = "; ".join(
+                    issue.message
+                    for issue in contract_report.issues
+                    if issue.level == "error"
+                )
+                raise ValueError(f"Model contract blocked the run: {details}")
+            validate_contract_parameters(contract, [parameters])
 
         if work_dir is None:
             work_dir = Path(".sim-assistant") / "comsol-runs" / uuid.uuid4().hex
@@ -236,6 +281,8 @@ class ComsolAdapter(SimulationAdapter):
         tables = extract_mph_tables(output_model)
         tables_are_fresh = config.job_tag is not None
         metrics = _table_metrics(tables) if tables_are_fresh else {}
+        if contract_report is not None and tables_are_fresh:
+            metrics = apply_output_bindings(metrics, contract_report)
         metrics.update(_solver_log_metrics(batch_log))
         metrics["comsol_duration_seconds"] = round(duration_seconds, 6)
         metrics["output_model_bytes"] = float(output_model.stat().st_size)
@@ -279,6 +326,9 @@ class ComsolAdapter(SimulationAdapter):
                 "output_model": str(output_model.resolve()),
                 "batch_log": str(batch_log.resolve()),
                 "tables": tables,
+                "model_contract": (
+                    contract_report.to_dict() if contract_report is not None else None
+                ),
                 "selected_plot_groups": selected_plots,
                 **plot_export_metadata,
                 "table_results_status": (
@@ -329,6 +379,8 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
 
     parameters: dict[str, str] = {}
     studies: list[dict[str, str]] = []
+    jobs: list[dict[str, str]] = []
+    datasets: list[dict[str, str]] = []
     numerical_features: list[dict[str, str]] = []
     plot_groups: list[dict[str, str]] = []
     for node in _walk_json(smodel):
@@ -342,6 +394,22 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
                 {
                     "tag": str(node.get("tag", "")),
                     "label": str(node.get("label", "")),
+                }
+            )
+        elif api_class in {"Job", "JobSequence"}:
+            jobs.append(
+                {
+                    "tag": str(node.get("tag", "")),
+                    "label": str(node.get("label", "")),
+                    "type": str(node.get("apiType", "")),
+                }
+            )
+        elif api_class in {"Data", "Dataset", "DatasetFeature"}:
+            datasets.append(
+                {
+                    "tag": str(node.get("tag", "")),
+                    "label": str(node.get("label", "")),
+                    "type": str(node.get("apiType", "")),
                 }
             )
         elif api_class == "NumericalFeature":
@@ -378,6 +446,8 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
         required_products=[line.strip() for line in licenses if line.strip()],
         parameters=parameters,
         studies=studies,
+        jobs=jobs,
+        datasets=datasets,
         numerical_features=numerical_features,
         plot_groups=plot_groups,
     )
@@ -413,8 +483,17 @@ def check_comsol(
         output_symbols = catalog_mph_output_symbols(config.model_path)
     except ValueError:
         output_symbols = []
+    contract_report = None
+    if config.contract_path is not None:
+        contract_report = evaluate_model_contract(
+            load_model_contract(config.contract_path),
+            info.to_dict(),
+            output_symbols,
+            selected_study=selected_study,
+            selected_job=config.job_tag,
+        )
     return {
-        "status": "ok",
+        "status": contract_report.status if contract_report is not None else "ok",
         "executable": str(config.executable.resolve()),
         "installed_version": version.stdout.strip(),
         "model": info.to_dict(),
@@ -425,6 +504,7 @@ def check_comsol(
             line.strip() for line in licenses.stdout.splitlines() if line.strip()
         ],
         "output_symbols": output_symbols,
+        "contract": contract_report.to_dict() if contract_report is not None else None,
         "output_symbols_note": (
             "These symbols come from saved single-row COMSOL tables. They become "
             "fresh run metrics only when a configured job sequence reevaluates "
@@ -730,6 +810,7 @@ def catalog_mph_output_symbols(model_path: str | Path) -> list[dict[str, Any]]:
                     "table_tag": table["tag"],
                     "table_label": table["label"],
                     "saved_value": float(value),
+                    "unit": column_unit(column),
                 }
             )
     return symbols
@@ -786,6 +867,12 @@ def _select_study(
     model_info: ComsolModelInfo,
 ) -> str | None:
     if job_tag:
+        available_jobs = [job["tag"] for job in model_info.jobs if job["tag"]]
+        if available_jobs and job_tag not in available_jobs:
+            raise ValueError(
+                f"Job sequence '{job_tag}' not found; available jobs: "
+                + ", ".join(available_jobs)
+            )
         return None
     available = [study["tag"] for study in model_info.studies if study["tag"]]
     if study_tag:

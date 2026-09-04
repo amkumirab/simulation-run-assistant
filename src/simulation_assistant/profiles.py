@@ -26,6 +26,7 @@ class WorkspaceProfile:
     name: str
     executable_path: str
     model_path: str
+    contract_path: str
     target_mode: str
     study_tag: str
     job_tag: str
@@ -45,6 +46,7 @@ class WorkspaceProfile:
         name: str,
         executable_path: str,
         model_path: str,
+        contract_path: str = "",
         target_mode: str = "study",
         study_tag: str = "",
         job_tag: str = "",
@@ -61,6 +63,7 @@ class WorkspaceProfile:
             name=name.strip(),
             executable_path=executable_path.strip(),
             model_path=model_path.strip(),
+            contract_path=contract_path.strip(),
             target_mode=target_mode.strip().lower(),
             study_tag=study_tag.strip(),
             job_tag=job_tag.strip(),
@@ -87,6 +90,7 @@ class WorkspaceProfile:
                 name=str(data["name"]),
                 executable_path=str(data["executable_path"]),
                 model_path=str(data["model_path"]),
+                contract_path=str(data.get("contract_path", "")),
                 target_mode=str(data.get("target_mode", "study")),
                 study_tag=str(data.get("study_tag", "")),
                 job_tag=str(data.get("job_tag", "")),
@@ -131,6 +135,8 @@ def validate_profile(profile: WorkspaceProfile) -> None:
         raise ValueError("COMSOL executable path cannot be empty")
     if not profile.model_path:
         raise ValueError("MPH model path cannot be empty")
+    if profile.contract_path and Path(profile.contract_path).suffix.lower() != ".json":
+        raise ValueError("Model contract path must use the .json extension")
     if profile.target_mode not in {"study", "job"}:
         raise ValueError("Profile target mode must be 'study' or 'job'")
     if profile.timeout_seconds < 1:
@@ -167,7 +173,10 @@ def missing_local_paths(profile: WorkspaceProfile) -> list[tuple[str, Path]]:
     for label, raw_path in (
         ("COMSOL executable", profile.executable_path),
         ("MPH model", profile.model_path),
+        ("Model contract", profile.contract_path),
     ):
+        if not raw_path:
+            continue
         path = Path(raw_path).expanduser()
         if not path.is_file():
             missing.append((label, path))
@@ -350,6 +359,7 @@ def sanitized_profile_template(profile: WorkspaceProfile) -> dict[str, Any]:
         "schema_version": PROFILE_SCHEMA_VERSION,
         "name": profile.name,
         "local_paths_excluded": True,
+        "contract_path_excluded": bool(profile.contract_path),
         "target": {
             "mode": profile.target_mode,
             "study_tag": profile.study_tag,

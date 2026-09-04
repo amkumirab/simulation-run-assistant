@@ -24,6 +24,7 @@ COMSOL_STUDY_TAG       Study to run, such as std1
 COMSOL_JOB_TAG         Alternative job sequence; do not set with STUDY_TAG
 COMSOL_TIMEOUT_SECONDS Maximum solve time; default 3600
 COMSOL_CORES           Optional positive core count
+COMSOL_CONTRACT_PATH   Optional versioned model contract JSON file
 ```
 
 The adapter automatically selects the study when the model contains exactly one
@@ -37,6 +38,7 @@ $env:COMSOL_MODEL_PATH="C:\private\model.mph"
 $env:COMSOL_STUDY_TAG="std1"
 $env:COMSOL_TIMEOUT_SECONDS="1800"
 $env:COMSOL_CORES="4"
+$env:COMSOL_CONTRACT_PATH="C:\private\model-contract.json"
 ```
 
 ## Validate before running
@@ -53,6 +55,10 @@ The check reports:
 - Available studies and numerical features
 - Selected study or job
 - License products required by the MPH model
+- Model-contract compatibility with Ready, Warning, or Blocked findings
+
+See [COMSOL model contracts](MODEL_CONTRACT.md) for the schema, WPT example,
+input-limit behavior, and stable output bindings.
 
 The native desktop application also provides a duplicate-run preflight before
 queueing. It compares the selected model revision, Study or Job Sequence, Plot
@@ -102,11 +108,12 @@ the dashboard server:
 sim-assistant desktop
 ```
 
-Use the native file picker to select `comsolbatch.exe` and an MPH model. After a
-successful connection check, the app loads global parameters into editable
-fields and catalogs numeric symbols from saved single-row COMSOL tables. Define
-optional computed outputs, run or queue the model, and use **Compare runs** to
-inspect one metric across different input states.
+Use the native file picker to select `comsolbatch.exe`, an MPH model, and an
+optional versioned JSON contract. After a successful connection check, the app
+loads declared design inputs into editable fields and catalogs numeric symbols
+from saved single-row COMSOL tables. Define optional computed outputs, run or
+queue the model, and use **Compare runs** to inspect one metric across different
+input states.
 
 To build a sweep directly in the desktop app, change a parameter mode from
 **Fixed** to **Sweep** and enter either comma-separated COMSOL values such as
@@ -125,6 +132,7 @@ the visible comparison can be exported as a UTF-8 CSV file.
 The native app can save the complete repeatable workspace under a profile name:
 
 - Local COMSOL executable and MPH model paths
+- Local model-contract path
 - Study or Job Sequence selection
 - Timeout, core count, and run label
 - Parameter values and Fixed/Sweep modes

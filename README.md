@@ -41,6 +41,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Batch-filtered comparison charts, highest-value highlighting, and CSV export
 - Constrained sweep ranking with maximize/minimize objectives and CSV export
 - Unit-aware parameter comparison with SI normalization and dimension checks
+- Versioned COMSOL model contracts with pre-run compatibility and limit checks
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -325,33 +326,34 @@ artifact directory, applies manifest parameters through COMSOL's `-pname` and
 `comsol.log`, and extracts saved numerical tables into `result.json`.
 
 Configure `COMSOL_EXECUTABLE`, `COMSOL_MODEL_PATH`, and optionally
-`COMSOL_STUDY_TAG`, then validate the setup:
+`COMSOL_STUDY_TAG` and `COMSOL_CONTRACT_PATH`, then validate the setup:
 
 ```bash
 sim-assistant comsol-check
 ```
 
 See [`docs/COMSOL_INTEGRATION.md`](docs/COMSOL_INTEGRATION.md) for the full
-configuration and model contract.
+configuration. See [`docs/MODEL_CONTRACT.md`](docs/MODEL_CONTRACT.md) for the
+versioned contract schema, desktop preflight states, and WPT example.
 
 ## Scientific roadmap
 
+Versioned WPT model contracts now define visible design inputs, protected
+internal parameters, required outputs, units, table bindings, and safe limits.
 Future increments prioritize trustworthy WPT results before expanding secondary
 interfaces or deployment options:
 
-1. Define a versioned WPT model contract with visible design inputs, internal
-   parameters, required outputs, units, table tags, and validation limits.
-2. Discover COMSOL job sequences, numerical evaluations, and result tables during
-   model inspection, then report contract compatibility before a run.
-3. Add a scientific validation gate for freshness, required metrics, reciprocity,
+1. Expand COMSOL job-sequence, numerical-evaluation, and result-table discovery
+   during model inspection, then report deeper contract compatibility before a run.
+2. Add a scientific validation gate for freshness, required metrics, reciprocity,
    physical bounds, mesh quality, and solver warnings.
-4. Add an explicit storage-retention policy before running large production
+3. Add an explicit storage-retention policy before running large production
    sweeps with copied MPH files.
-5. Run and document the baseline 36-state gap, offset, and tilt sweep with the
+4. Run and document the baseline 36-state gap, offset, and tilt sweep with the
    production IBC model.
-6. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
-7. Add robust grouped objectives across misalignment states.
-8. Validate selected designs against a higher-fidelity volume reference model.
+5. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
+6. Add robust grouped objectives across misalignment states.
+7. Validate selected designs against a higher-fidelity volume reference model.
 
 Production and reference MPH files remain local and are never committed to this
 repository.
@@ -364,6 +366,7 @@ src/simulation_assistant/
 |-- cli.py          # Command-line interface
 |-- desktop.py      # Native Tkinter assistant
 |-- formulas.py     # Safe computed-output expression engine
+|-- model_contract.py # Versioned model interface and compatibility checks
 |-- manifest.py     # JSON validation and sweep expansion
 |-- notifications.py
 |-- plot_artifacts.py # Safe plot lookup and native preview helpers

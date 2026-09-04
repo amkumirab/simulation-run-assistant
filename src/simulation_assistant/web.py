@@ -20,6 +20,10 @@ from simulation_assistant.adapters.comsol import (
     discover_comsol_executable,
 )
 from simulation_assistant.notifications import notifier_from_environment
+from simulation_assistant.model_contract import (
+    load_model_contract,
+    validate_contract_parameters,
+)
 from simulation_assistant.preflight import build_comsol_run_context
 from simulation_assistant.progress import inspect_job_progress
 from simulation_assistant.runner import SimulationRunner
@@ -157,6 +161,11 @@ def create_dashboard_server(
                 raise ValueError("A run can contain at most 200 parameters")
             if not isinstance(start, bool):
                 raise ValueError("Start must be true or false")
+            if config.contract_path is not None:
+                validate_contract_parameters(
+                    load_model_contract(config.contract_path),
+                    [parameters],
+                )
 
             job_id = current_store.enqueue_batch(
                 batch_name.strip(),
@@ -168,6 +177,7 @@ def create_dashboard_server(
                     study_tag=config.study_tag,
                     job_tag=config.job_tag,
                     plot_tags=config.plot_tags,
+                    contract_path=config.contract_path,
                 ),
             )[0]
             if start:
@@ -283,6 +293,7 @@ def _config_from_payload(payload: dict[str, Any]) -> ComsolConfig:
         raise ValueError("Connection must be a JSON object")
     executable = _optional_string(raw.get("executable"), "Executable")
     model_path = _optional_string(raw.get("model_path"), "Model path")
+    contract_path = _optional_string(raw.get("contract_path"), "Contract path")
     if not executable:
         executable = os.getenv("COMSOL_EXECUTABLE") or str(discover_comsol_executable())
     if not model_path:
@@ -302,6 +313,7 @@ def _config_from_payload(payload: dict[str, Any]) -> ComsolConfig:
         job_tag=_optional_string(raw.get("job_tag"), "Job tag"),
         timeout_seconds=timeout,
         cores=cores,
+        contract_path=Path(contract_path) if contract_path else None,
     )
     config.validate()
     return config
@@ -342,6 +354,7 @@ def _discovery_payload() -> dict[str, Any]:
         "defaults": {
             "study_tag": os.getenv("COMSOL_STUDY_TAG"),
             "job_tag": os.getenv("COMSOL_JOB_TAG"),
+            "contract_path": os.getenv("COMSOL_CONTRACT_PATH"),
             "timeout_seconds": _environment_positive_int(
                 "COMSOL_TIMEOUT_SECONDS", 3600
             ),

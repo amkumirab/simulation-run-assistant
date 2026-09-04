@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "name": "wpt-2d-baseline",
+  "version": "1.0.0",
+  "require_runnable": true,
+  "required_physics": [
+    "Magnetic_fields"
+  ],
+  "target": {
+    "kind": "job",
+    "tag": "job1"
+  },
+  "dataset_tag": "dset1",
+  "inputs": [
+    {
+      "name": "f0",
+      "unit": "kHz",
+      "min": "70[kHz]",
+      "max": "100[kHz]"
+    },
+    {
+      "name": "gap",
+      "unit": "mm",
+      "min": "5[mm]",
+      "max": "200[mm]"
+    },
+    {
+      "name": "I_src",
+      "unit": "A",
+      "min": "0.1[A]",
+      "max": "20[A]"
+    }
+  ],
+  "internal_parameters": [
+    "N1",
+    "N2",
+    "r_in",
+    "r_out",
+    "thick"
+  ],
+  "outputs": [
+    {
+      "name": "input_power",
+      "table_tag": "tbl1",
+      "column": "Input power (W)",
+      "unit": "W"
+    },
+    {
+      "name": "output_power",
+      "table_tag": "tbl1",
+      "column": "Output power (W)",
+      "unit": "W"
+    },
+    {
+      "name": "efficiency",
+      "table_tag": "tbl1",
+      "column": "Efficiency (%)",
+      "unit": "%"
+    }
+  ]
+}

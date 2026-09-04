@@ -20,6 +20,10 @@ from simulation_assistant.formulas import (
     validate_output_formulas,
 )
 from simulation_assistant.notifications import notifier_from_environment
+from simulation_assistant.model_contract import (
+    load_model_contract,
+    validate_contract_parameters,
+)
 from simulation_assistant.plot_artifacts import (
     PlotComparisonArtifact,
     format_file_size,
@@ -287,6 +291,10 @@ class DesktopApp:
         )
         self.executable_var = tk.StringVar()
         self.model_var = tk.StringVar()
+        self.contract_var = tk.StringVar()
+        self.contract_status_var = tk.StringVar(
+            value="No model contract selected. Runs remain available with a warning."
+        )
         self.target_mode_var = tk.StringVar(value="study")
         self.study_var = tk.StringVar()
         self.job_var = tk.StringVar()
@@ -318,6 +326,7 @@ class DesktopApp:
         for variable in (
             self.executable_var,
             self.model_var,
+            self.contract_var,
             self.target_mode_var,
             self.study_var,
             self.job_var,
@@ -542,8 +551,30 @@ class DesktopApp:
             command=self._browse_model,
         ).grid(row=5, column=3, sticky="ew")
 
+        self._field_label(card, "Model contract (optional JSON)", 6, 0)
+        ttk.Entry(card, textvariable=self.contract_var).grid(
+            row=7, column=0, columnspan=3, sticky="ew", padx=(0, 8)
+        )
+        ttk.Button(
+            card,
+            text="Browse",
+            style="Secondary.TButton",
+            command=self._browse_contract,
+        ).grid(row=7, column=3, sticky="ew")
+        ttk.Label(
+            card,
+            textvariable=self.contract_status_var,
+            style="CardText.TLabel",
+        ).grid(row=8, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Button(
+            card,
+            text="View preflight",
+            style="Secondary.TButton",
+            command=self._show_contract_report,
+        ).grid(row=8, column=3, sticky="ew", pady=(6, 0))
+
         mode_frame = ttk.Frame(card, style="Card.TFrame")
-        mode_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(13, 0))
+        mode_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(13, 0))
         mode_frame.grid_columnconfigure(1, weight=1)
         mode_frame.grid_columnconfigure(3, weight=1)
         ttk.Radiobutton(
@@ -590,7 +621,7 @@ class DesktopApp:
         self._toggle_target()
 
         plot_frame = ttk.Frame(card, style="Card.TFrame")
-        plot_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(14, 0))
+        plot_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(14, 0))
         plot_frame.grid_columnconfigure(1, weight=1)
         ttk.Label(plot_frame, text="Plot outputs", style="Field.TLabel").grid(
             row=0, column=0, sticky="nw", padx=(0, 10), pady=(7, 0)
@@ -1132,6 +1163,7 @@ class DesktopApp:
                     executable = ""
             self.executable_var.set(executable)
             self.model_var.set(os.getenv("COMSOL_MODEL_PATH", ""))
+            self.contract_var.set(os.getenv("COMSOL_CONTRACT_PATH", ""))
             self.study_var.set(os.getenv("COMSOL_STUDY_TAG", ""))
             self.job_var.set(os.getenv("COMSOL_JOB_TAG", ""))
             self.timeout_var.set(os.getenv("COMSOL_TIMEOUT_SECONDS", "3600"))
@@ -1185,6 +1217,7 @@ class DesktopApp:
             self.profile_name_var.set(profile.name)
             self.executable_var.set(profile.executable_path)
             self.model_var.set(profile.model_path)
+            self.contract_var.set(profile.contract_path)
             self.target_mode_var.set(profile.target_mode)
             self.study_var.set(profile.study_tag)
             self.job_var.set(profile.job_tag)
@@ -1257,6 +1290,7 @@ class DesktopApp:
             name=name,
             executable_path=self.executable_var.get(),
             model_path=self.model_var.get(),
+            contract_path=self.contract_var.get(),
             target_mode=self.target_mode_var.get(),
             study_tag=self.study_var.get(),
             job_tag=self.job_var.get(),
@@ -1397,6 +1431,47 @@ class DesktopApp:
             )
             self.model_var.set(selected)
 
+    def _browse_contract(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Select model contract",
+            filetypes=[("Model contract", "*.json"), ("All files", "*")],
+        )
+        if selected:
+            self.contract_var.set(selected)
+
+    def _show_contract_report(self) -> None:
+        report = (self.connection_report or {}).get("contract")
+        if report is None:
+            messagebox.showinfo(
+                "Model contract preflight",
+                "No model contract is selected. Add a versioned JSON contract "
+                "and check the connection again.",
+                parent=self.root,
+            )
+            return
+        issues = report.get("issues", [])
+        lines = [
+            f"Status: {str(report.get('status', 'unknown')).upper()}",
+            f"Contract: {report.get('contract_name', '')} {report.get('contract_version', '')}",
+            f"Design inputs: {len(report.get('design_inputs', []))}",
+            f"Internal parameters: {len(report.get('internal_parameters', []))}",
+            f"Output bindings: {len(report.get('output_bindings', {}))}",
+        ]
+        if issues:
+            lines.append("")
+            lines.append("Findings:")
+            lines.extend(
+                f"- {str(issue.get('level', 'info')).upper()}: {issue.get('message', '')}"
+                for issue in issues
+            )
+        else:
+            lines.extend(["", "All contract requirements were satisfied."])
+        messagebox.showinfo(
+            "Model contract preflight",
+            "\n".join(lines),
+            parent=self.root,
+        )
+
     def _toggle_target(self) -> None:
         if self.target_mode_var.get() == "job":
             self.study_entry.configure(state="disabled")
@@ -1416,6 +1491,7 @@ class DesktopApp:
             return
         self.connection_report = None
         self.connection_status_var.set("Needs recheck")
+        self.contract_status_var.set("Connection settings changed; run preflight again.")
         self.status_label.configure(
             background=COLORS["amber_soft"], foreground=COLORS["amber"]
         )
@@ -1435,6 +1511,11 @@ class DesktopApp:
             timeout_seconds=timeout,
             cores=cores,
             plot_tags=tuple(self.selected_plot_tags),
+            contract_path=(
+                Path(self.contract_var.get().strip())
+                if self.contract_var.get().strip()
+                else None
+            ),
         )
         config.validate()
         return config
@@ -1485,20 +1566,49 @@ class DesktopApp:
         self.model_summary_var.set(
             f"{model['filename']}  ·  {len(model.get('plot_groups', []))} plot group(s)"
         )
-        self.connection_status_var.set("Connected")
+        contract_report = report.get("contract")
+        contract_status = (
+            str(contract_report.get("status", "warning"))
+            if contract_report is not None
+            else "warning"
+        )
+        blocked = contract_status == "blocked"
+        self.connection_status_var.set(contract_status.capitalize())
+        color = "red" if blocked else "amber" if contract_status == "warning" else "teal"
         self.status_label.configure(
-            background=COLORS["teal_soft"], foreground=COLORS["teal"]
+            background=COLORS[f"{color}_soft"], foreground=COLORS[color]
         )
-        self.activity_var.set(
-            f"{model['filename']} is ready. Review inputs and define optional outputs."
-        )
-        self._populate_parameters(model.get("parameters", {}))
+        if contract_report is None:
+            self.contract_status_var.set(
+                "Warning · no model contract selected; compatibility is not enforced."
+            )
+            self.activity_var.set(
+                f"{model['filename']} connected without a model contract."
+            )
+            visible_parameters = model.get("parameters", {})
+        else:
+            issue_count = len(contract_report.get("issues", []))
+            self.contract_status_var.set(
+                f"{contract_status.capitalize()} · {contract_report.get('contract_name', '')} "
+                f"v{contract_report.get('contract_version', '')} · {issue_count} finding(s)"
+            )
+            self.activity_var.set(
+                f"Contract preflight {contract_status} for {model['filename']}. "
+                "Open the report for details."
+            )
+            design_inputs = set(contract_report.get("design_inputs", []))
+            visible_parameters = {
+                name: value
+                for name, value in model.get("parameters", {}).items()
+                if name in design_inputs
+            }
+        self._populate_parameters(visible_parameters)
         selected_profile = self._selected_saved_profile()
         if selected_profile is not None:
             self._apply_profile_parameter_values(selected_profile)
         self._populate_output_symbols(report.get("output_symbols", []))
         self._populate_plot_groups(model.get("plot_groups", []))
-        self._set_run_actions(True)
+        self._set_run_actions(not blocked)
         if config.job_tag:
             self.freshness_var.set(
                 "Physical output formulas use tables reevaluated by the selected job sequence."
@@ -1771,11 +1881,17 @@ class DesktopApp:
         parameter_sets: list[dict[str, str]],
         formulas: dict[str, str],
     ) -> RunPreflightPlan:
+        if config.contract_path is not None:
+            validate_contract_parameters(
+                load_model_contract(config.contract_path),
+                parameter_sets,
+            )
         context = build_comsol_run_context(
             config.model_path,
             study_tag=config.study_tag,
             job_tag=config.job_tag,
             plot_tags=config.plot_tags,
+            contract_path=config.contract_path,
         )
         initial = build_preflight_plan(
             parameter_sets,
@@ -1981,6 +2097,11 @@ class DesktopApp:
     def _require_connected_config(self) -> ComsolConfig:
         if self.connection_report is None:
             raise ValueError("Check the COMSOL connection before running a job")
+        contract_report = self.connection_report.get("contract")
+        if contract_report and contract_report.get("status") == "blocked":
+            raise ValueError(
+                "The model contract preflight is blocked. Open the report and resolve its errors."
+            )
         return self._build_config()
 
     def _runner(self, config: ComsolConfig) -> SimulationRunner:

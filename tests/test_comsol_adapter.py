@@ -93,6 +93,8 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(info.required_products, ["COMSOL", "ACDC"])
         self.assertEqual(info.parameters, {"frequency": "85[kHz]"})
         self.assertEqual(info.studies, [{"tag": "std1", "label": "Study 1"}])
+        self.assertEqual(info.jobs[0]["tag"], "batch1")
+        self.assertEqual(info.datasets[0]["tag"], "dset1")
         self.assertEqual(
             info.plot_groups,
             [
@@ -273,7 +275,49 @@ class ComsolAdapterTests(unittest.TestCase):
 
         self.assertEqual(len(symbols), 2)
         self.assertEqual(symbols[1]["column"], "value (H)")
+        self.assertEqual(symbols[1]["unit"], "H")
         self.assertEqual(symbols[1]["saved_value"], 1.2e-7)
+
+    def test_contract_adds_named_output_metric(self) -> None:
+        contract_path = self.root / "contract.json"
+        contract_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "name": "test-model",
+                    "version": "1.0.0",
+                    "required_physics": ["Magnetic_fields"],
+                    "target": {"kind": "job", "tag": "batch1"},
+                    "inputs": [{"name": "frequency", "unit": "kHz"}],
+                    "internal_parameters": [],
+                    "outputs": [
+                        {
+                            "name": "inductance",
+                            "table_tag": "tbl1",
+                            "column": "value (H)",
+                            "unit": "H",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        config = replace(
+            self.config(use_job=True),
+            contract_path=contract_path,
+            plot_tags=(),
+        )
+
+        report = check_comsol(config, FakeComsolProcess())
+        result = ComsolAdapter(config, FakeComsolProcess()).run(
+            {"frequency": "90[kHz]"},
+            work_dir=self.root / "contract-job",
+        )
+
+        self.assertEqual(report["status"], "ready")
+        self.assertEqual(report["contract"]["output_bindings"]["inductance"], "tbl1_2_value_h")
+        self.assertEqual(result.metrics["inductance"], 1.2e-7)
+        self.assertEqual(result.metadata["model_contract"]["contract_name"], "test-model")
 
     def test_validates_plot_group_selection(self) -> None:
         plots = inspect_mph(self.model).plot_groups
@@ -287,6 +331,11 @@ class ComsolAdapterTests(unittest.TestCase):
             validate_plot_selection(["pg1", "pg1"], plots)
         with self.assertRaisesRegex(ValueError, "no more than"):
             validate_plot_selection([f"pg{index}" for index in range(13)], plots)
+
+    def test_rejects_a_missing_discovered_job_sequence(self) -> None:
+        config = replace(self.config(use_job=True), job_tag="missing")
+        with self.assertRaisesRegex(ValueError, "available jobs: batch1"):
+            check_comsol(config, FakeComsolProcess())
 
 
 def _write_test_mph(path: Path) -> None:
@@ -303,6 +352,18 @@ def _write_test_mph(path: Path) -> None:
                 "settings": [{"name": "frequency", "value": "85[kHz]"}],
             },
             {"apiClass": "Study", "tag": "std1", "label": "Study 1"},
+            {
+                "apiClass": "Job",
+                "apiType": "JobSequence",
+                "tag": "batch1",
+                "label": "Batch 1",
+            },
+            {
+                "apiClass": "DatasetFeature",
+                "apiType": "Solution",
+                "tag": "dset1",
+                "label": "Solution 1",
+            },
             {
                 "apiClass": "NumericalFeature",
                 "apiType": "EvalGlobal",

@@ -17,6 +17,7 @@ def make_profile(name: str = "Wireless charger") -> WorkspaceProfile:
         name=name,
         executable_path="C:/Program Files/COMSOL/comsolbatch.exe",
         model_path="C:/private/models/charger.mph",
+        contract_path="C:/private/models/charger.contract.json",
         target_mode="job",
         job_tag="job1",
         timeout_seconds=7200,
@@ -88,6 +89,10 @@ class ProfileTests(unittest.TestCase):
             WorkspaceProfile.create(
                 **{**make_profile().to_dict(), "plot_tags": ["pg-1"]}
             )
+        with self.assertRaisesRegex(ValueError, "json extension"):
+            WorkspaceProfile.create(
+                **{**make_profile().to_dict(), "contract_path": "contract.txt"}
+            )
 
     def test_sanitized_export_never_contains_local_paths(self) -> None:
         profile = make_profile()
@@ -95,6 +100,7 @@ class ProfileTests(unittest.TestCase):
         serialized = json.dumps(template)
         self.assertNotIn(profile.executable_path, serialized)
         self.assertNotIn(profile.model_path, serialized)
+        self.assertNotIn(profile.contract_path, serialized)
         self.assertTrue(template["local_paths_excluded"])
         self.assertEqual(template["parameters"]["f0"]["mode"], "Sweep")
         self.assertEqual(template["plot_tags"], ["pg1", "pg3"])
@@ -108,7 +114,10 @@ class ProfileTests(unittest.TestCase):
 
     def test_reports_missing_local_files(self) -> None:
         missing = missing_local_paths(make_profile())
-        self.assertEqual([label for label, _path in missing], ["COMSOL executable", "MPH model"])
+        self.assertEqual(
+            [label for label, _path in missing],
+            ["COMSOL executable", "MPH model", "Model contract"],
+        )
 
 
 if __name__ == "__main__":
