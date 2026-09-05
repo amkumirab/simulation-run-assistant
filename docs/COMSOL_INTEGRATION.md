@@ -115,6 +115,14 @@ from saved single-row COMSOL tables. Define optional computed outputs, run or
 queue the model, and use **Compare runs** to inspect one metric across different
 input states.
 
+The connection card also reports a result-pipeline state. Choose **View
+pipeline** to see how the selected Study is connected to each Dataset, Derived
+Values node, and Table, and whether the selected Job Sequence contains both a
+solve step and a Derived Values evaluation step. The inspector also lists
+expressions, units, table columns, missing links, orphan saved tables, and a
+specific corrective action for every finding. See
+[`RESULT_PIPELINE.md`](RESULT_PIPELINE.md).
+
 To build a sweep directly in the desktop app, change a parameter mode from
 **Fixed** to **Sweep** and enter either comma-separated COMSOL values such as
 `70[kHz], 80[kHz], 90[kHz]` or an inclusive `start:stop:step` range such as
@@ -233,6 +241,13 @@ results, create a COMSOL job sequence containing:
 Select **Job sequence** in the native app and enter that job tag. Metrics
 extracted from the reevaluated tables can then be used by computed-output
 formulas and compared across runs.
+
+The result-pipeline inspector applies this rule before execution. A complete
+Study-only chain is reported as **Stale**, because solving a Study does not prove
+that its saved result tables will be reevaluated. A discovered Job Sequence is
+reported as **Fresh** only when its steps include both solving and Derived Values
+evaluation and all selected output links are complete. Versioned model contracts
+block required output bindings when that fresh pipeline cannot be verified.
 
 ## Enqueue a COMSOL job
 

@@ -300,6 +300,8 @@ def _config_from_payload(payload: dict[str, Any]) -> ComsolConfig:
         model_path = os.getenv("COMSOL_MODEL_PATH")
     if not model_path:
         raise ValueError("COMSOL model path is required")
+    if not contract_path:
+        contract_path = os.getenv("COMSOL_CONTRACT_PATH")
     timeout = _optional_positive_int(raw.get("timeout_seconds"), "Timeout")
     if timeout is None:
         timeout = _environment_positive_int("COMSOL_TIMEOUT_SECONDS", 3600)
@@ -347,14 +349,18 @@ def _discovery_payload() -> dict[str, Any]:
     except ValueError:
         executable = None
     configured_model = os.getenv("COMSOL_MODEL_PATH")
+    configured_contract = os.getenv("COMSOL_CONTRACT_PATH")
     return {
         "executable": executable,
         "model_configured": bool(configured_model),
         "model_filename": Path(configured_model).name if configured_model else None,
+        "contract_configured": bool(configured_contract),
+        "contract_filename": (
+            Path(configured_contract).name if configured_contract else None
+        ),
         "defaults": {
             "study_tag": os.getenv("COMSOL_STUDY_TAG"),
             "job_tag": os.getenv("COMSOL_JOB_TAG"),
-            "contract_path": os.getenv("COMSOL_CONTRACT_PATH"),
             "timeout_seconds": _environment_positive_int(
                 "COMSOL_TIMEOUT_SECONDS", 3600
             ),

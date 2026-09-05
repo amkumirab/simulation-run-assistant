@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.19.0] - 2026-09-05
+
+### Added
+
+- COMSOL result-pipeline inspection from Study through Dataset, Derived Values,
+  and Table features
+- Fresh, Stale, Incomplete, and Unknown pipeline states with corrective actions
+- Job Sequence step inspection for solve and Derived Values evaluation coverage
+- Native result-pipeline viewer with expression, unit, table-column, and job-step details
+- Pipeline summaries in COMSOL checks, run metadata, and the local dashboard
+- Detection of mismatched Study links, incomplete chains, and orphan saved tables
+- Realistic synthetic MPH coverage and dedicated result-pipeline tests
+
+### Changed
+
+- Model-contract outputs now require a verifiable fresh Job Sequence pipeline
+- Native Job Sequence selection lists tags discovered from the selected MPH model
+- Dashboard discovery no longer returns the complete local contract path
+- Package version increased to 0.19.0
+
 ## [0.18.0] - 2026-09-04
 
 ### Added

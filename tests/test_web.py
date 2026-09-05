@@ -161,14 +161,24 @@ class DashboardTests(unittest.TestCase):
 
     def test_discovery_never_returns_the_full_model_path(self) -> None:
         private_path = str(self.root / "private" / "sensitive-model.mph")
-        with patch.dict("os.environ", {"COMSOL_MODEL_PATH": private_path}):
+        contract_path = str(self.root / "private" / "model-contract.json")
+        with patch.dict(
+            "os.environ",
+            {
+                "COMSOL_MODEL_PATH": private_path,
+                "COMSOL_CONTRACT_PATH": contract_path,
+            },
+        ):
             status, _, body = self.request("GET", "/api/comsol/discovery")
 
         payload = json.loads(body)
         self.assertEqual(status, 200)
         self.assertTrue(payload["model_configured"])
         self.assertEqual(payload["model_filename"], "sensitive-model.mph")
+        self.assertTrue(payload["contract_configured"])
+        self.assertEqual(payload["contract_filename"], "model-contract.json")
         self.assertNotIn(private_path, body)
+        self.assertNotIn(contract_path, body)
 
     def test_run_next_reports_a_paused_queue(self) -> None:
         status, _, _ = self.request(

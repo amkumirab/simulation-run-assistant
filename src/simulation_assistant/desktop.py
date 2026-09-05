@@ -295,6 +295,9 @@ class DesktopApp:
         self.contract_status_var = tk.StringVar(
             value="No model contract selected. Runs remain available with a warning."
         )
+        self.pipeline_status_var = tk.StringVar(
+            value="Result pipeline not inspected."
+        )
         self.target_mode_var = tk.StringVar(value="study")
         self.study_var = tk.StringVar()
         self.job_var = tk.StringVar()
@@ -573,8 +576,30 @@ class DesktopApp:
             command=self._show_contract_report,
         ).grid(row=8, column=3, sticky="ew", pady=(6, 0))
 
+        pipeline_frame = ttk.Frame(card, style="Card.TFrame")
+        pipeline_frame.grid(
+            row=9, column=0, columnspan=4, sticky="ew", pady=(10, 0)
+        )
+        pipeline_frame.grid_columnconfigure(1, weight=1)
+        ttk.Label(
+            pipeline_frame,
+            text="Result pipeline",
+            style="Field.TLabel",
+        ).grid(row=0, column=0, sticky="w", padx=(0, 10))
+        ttk.Label(
+            pipeline_frame,
+            textvariable=self.pipeline_status_var,
+            style="CardText.TLabel",
+        ).grid(row=0, column=1, sticky="w")
+        ttk.Button(
+            pipeline_frame,
+            text="View pipeline",
+            style="Secondary.TButton",
+            command=self._show_result_pipeline,
+        ).grid(row=0, column=2, sticky="e")
+
         mode_frame = ttk.Frame(card, style="Card.TFrame")
-        mode_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(13, 0))
+        mode_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(13, 0))
         mode_frame.grid_columnconfigure(1, weight=1)
         mode_frame.grid_columnconfigure(3, weight=1)
         ttk.Radiobutton(
@@ -597,7 +622,11 @@ class DesktopApp:
             variable=self.target_mode_var,
             command=self._toggle_target,
         ).grid(row=0, column=2, sticky="w")
-        self.job_entry = ttk.Entry(mode_frame, textvariable=self.job_var)
+        self.job_entry = ttk.Combobox(
+            mode_frame,
+            textvariable=self.job_var,
+            state="normal",
+        )
         self.job_entry.grid(row=0, column=3, sticky="ew", padx=(7, 16))
         ttk.Label(mode_frame, text="Timeout", style="Field.TLabel").grid(
             row=0, column=4, sticky="w"
@@ -621,7 +650,7 @@ class DesktopApp:
         self._toggle_target()
 
         plot_frame = ttk.Frame(card, style="Card.TFrame")
-        plot_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(14, 0))
+        plot_frame.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(14, 0))
         plot_frame.grid_columnconfigure(1, weight=1)
         ttk.Label(plot_frame, text="Plot outputs", style="Field.TLabel").grid(
             row=0, column=0, sticky="nw", padx=(0, 10), pady=(7, 0)
@@ -1245,6 +1274,7 @@ class DesktopApp:
         except (KeyError, OSError, ValueError) as exc:
             self.profile_status_var.set(str(exc))
         self.connection_status_var.set("Needs check")
+        self.pipeline_status_var.set("Profile loaded; inspect the result pipeline again.")
         self.status_label.configure(
             background=COLORS["amber_soft"], foreground=COLORS["amber"]
         )
@@ -1472,6 +1502,174 @@ class DesktopApp:
             parent=self.root,
         )
 
+    def _show_result_pipeline(self) -> None:
+        report = (self.connection_report or {}).get("result_pipeline")
+        if report is None:
+            messagebox.showinfo(
+                "COMSOL result pipeline",
+                "Check the COMSOL connection to inspect the result pipeline.",
+                parent=self.root,
+            )
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("COMSOL Result Pipeline")
+        window.geometry("940x620")
+        window.minsize(760, 500)
+        window.configure(background=COLORS["canvas"])
+        window.transient(self.root)
+
+        content = ttk.Frame(window, style="App.TFrame", padding=22)
+        content.pack(fill="both", expand=True)
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_rowconfigure(2, weight=1)
+        status = str(report.get("status", "unknown")).capitalize()
+        target_kind = str(report.get("target_kind", "target")).capitalize()
+        target_tag = str(report.get("target_tag") or "not selected")
+        ttk.Label(
+            content,
+            text=f"Result pipeline · {status}",
+            style="Title.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            content,
+            text=f"{target_kind}: {target_tag} · conservative freshness analysis",
+            style="Subtitle.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 14))
+
+        chain_card = ttk.Frame(content, style="Card.TFrame", padding=14)
+        chain_card.grid(row=2, column=0, sticky="nsew")
+        chain_card.grid_columnconfigure(0, weight=1)
+        chain_card.grid_rowconfigure(1, weight=1)
+        ttk.Label(
+            chain_card,
+            text="Study → Dataset → Derived Values → Table",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        columns = ("study", "dataset", "numerical", "table", "state")
+        tree = ttk.Treeview(chain_card, columns=columns, show="headings", height=7)
+        headings = {
+            "study": "STUDY",
+            "dataset": "DATASET",
+            "numerical": "DERIVED VALUES",
+            "table": "TABLE",
+            "state": "LINK",
+        }
+        widths = {
+            "study": 110,
+            "dataset": 130,
+            "numerical": 220,
+            "table": 170,
+            "state": 100,
+        }
+        for column in columns:
+            tree.heading(column, text=headings[column])
+            tree.column(column, width=widths[column], minwidth=80, anchor="w")
+        tree.grid(row=1, column=0, sticky="nsew")
+        chain_scroll = ttk.Scrollbar(
+            chain_card, orient="vertical", command=tree.yview
+        )
+        chain_scroll.grid(row=1, column=1, sticky="ns")
+        tree.configure(yscrollcommand=chain_scroll.set)
+        for chain in report.get("chains", []):
+            numerical = str(chain.get("numerical_tag") or "—")
+            label = str(chain.get("numerical_label") or "")
+            if label and label != numerical:
+                numerical = f"{numerical} · {label}"
+            table = str(chain.get("table_tag") or "—")
+            table_label = str(chain.get("table_label") or "")
+            if table_label and table_label != table:
+                table = f"{table} · {table_label}"
+            tree.insert(
+                "",
+                "end",
+                values=(
+                    chain.get("study_tag") or "—",
+                    chain.get("dataset_tag") or "—",
+                    numerical,
+                    table,
+                    str(chain.get("state", "unknown")).capitalize(),
+                ),
+            )
+
+        findings_card = ttk.Frame(content, style="Card.TFrame", padding=14)
+        findings_card.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
+        findings_card.grid_columnconfigure(0, weight=1)
+        findings_card.grid_rowconfigure(1, weight=1)
+        ttk.Label(
+            findings_card,
+            text="Pipeline details and recommended actions",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        details = tk.Text(
+            findings_card,
+            height=10,
+            wrap="word",
+            background=COLORS["soft"],
+            foreground=COLORS["ink"],
+            relief="flat",
+            padx=12,
+            pady=10,
+            font=("Segoe UI", 9),
+        )
+        details.grid(row=1, column=0, sticky="nsew")
+        detail_scroll = ttk.Scrollbar(
+            findings_card, orient="vertical", command=details.yview
+        )
+        detail_scroll.grid(row=1, column=1, sticky="ns")
+        details.configure(yscrollcommand=detail_scroll.set)
+        findings = report.get("findings", [])
+        if findings:
+            for index, finding in enumerate(findings):
+                if index:
+                    details.insert("end", "\n")
+                details.insert(
+                    "end",
+                    f"{str(finding.get('level', 'info')).upper()} · "
+                    f"{finding.get('message', '')}\n"
+                    f"Action: {finding.get('action', '')}\n",
+                )
+        else:
+            details.insert("end", "No pipeline findings were reported.")
+        chains = report.get("chains", [])
+        details.insert("end", f"\n\nDiscovered result chains: {len(chains)}\n")
+        for chain in chains:
+            details.insert(
+                "end",
+                f"- {chain.get('numerical_tag', '')} → "
+                f"{chain.get('table_tag') or 'unbound table'}\n",
+            )
+            expressions = list(chain.get("expressions", []))
+            units = list(chain.get("units", []))
+            for index, expression in enumerate(expressions):
+                unit = units[index] if index < len(units) else ""
+                suffix = f" [{unit}]" if unit else ""
+                details.insert("end", f"  Expression: {expression}{suffix}\n")
+            columns = ", ".join(str(value) for value in chain.get("table_columns", []))
+            details.insert("end", f"  Columns: {columns or 'none'}\n")
+        jobs = report.get("jobs", [])
+        details.insert("end", f"\nDiscovered Job Sequences: {len(jobs)}\n")
+        for job in jobs:
+            details.insert(
+                "end",
+                f"- {job.get('tag', '')} · {job.get('label', '')} · "
+                f"{len(job.get('steps', []))} step(s)\n",
+            )
+            for step in job.get("steps", []):
+                details.insert(
+                    "end",
+                    f"  {str(step.get('category', 'other')).capitalize()} · "
+                    f"{step.get('tag', '')} · {step.get('label', '')}\n",
+                )
+        details.configure(state="disabled")
+        ttk.Button(
+            content,
+            text="Close",
+            style="Primary.TButton",
+            command=window.destroy,
+        ).grid(row=4, column=0, sticky="e", pady=(12, 0))
+        window.focus_set()
+
     def _toggle_target(self) -> None:
         if self.target_mode_var.get() == "job":
             self.study_entry.configure(state="disabled")
@@ -1492,6 +1690,7 @@ class DesktopApp:
         self.connection_report = None
         self.connection_status_var.set("Needs recheck")
         self.contract_status_var.set("Connection settings changed; run preflight again.")
+        self.pipeline_status_var.set("Connection settings changed; inspect again.")
         self.status_label.configure(
             background=COLORS["amber_soft"], foreground=COLORS["amber"]
         )
@@ -1560,6 +1759,10 @@ class DesktopApp:
             self.study_entry.configure(
                 values=[study.get("tag", "") for study in studies]
             )
+            jobs = report.get("model", {}).get("jobs", [])
+            self.job_entry.configure(
+                values=[job.get("tag", "") for job in jobs]
+            )
         finally:
             self._ignore_connection_changes = False
         model = report["model"]
@@ -1567,6 +1770,13 @@ class DesktopApp:
             f"{model['filename']}  ·  {len(model.get('plot_groups', []))} plot group(s)"
         )
         contract_report = report.get("contract")
+        pipeline_report = report.get("result_pipeline") or {}
+        pipeline_status = str(pipeline_report.get("status", "unknown"))
+        self.pipeline_status_var.set(
+            f"{pipeline_status.capitalize()} · "
+            f"{len(pipeline_report.get('chains', []))} chain(s) · "
+            f"{len(pipeline_report.get('findings', []))} finding(s)"
+        )
         contract_status = (
             str(contract_report.get("status", "warning"))
             if contract_report is not None
@@ -1583,7 +1793,8 @@ class DesktopApp:
                 "Warning · no model contract selected; compatibility is not enforced."
             )
             self.activity_var.set(
-                f"{model['filename']} connected without a model contract."
+                f"{model['filename']} connected without a model contract. "
+                f"Result pipeline: {pipeline_status}."
             )
             visible_parameters = model.get("parameters", {})
         else:
@@ -1594,7 +1805,7 @@ class DesktopApp:
             )
             self.activity_var.set(
                 f"Contract preflight {contract_status} for {model['filename']}. "
-                "Open the report for details."
+                f"Result pipeline: {pipeline_status}."
             )
             design_inputs = set(contract_report.get("design_inputs", []))
             visible_parameters = {

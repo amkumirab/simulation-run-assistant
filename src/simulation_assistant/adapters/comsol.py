@@ -24,6 +24,7 @@ from simulation_assistant.model_contract import (
     validate_contract_parameters,
 )
 from simulation_assistant.process_control import run_cancellable_process
+from simulation_assistant.result_pipeline import inspect_result_pipeline
 from simulation_assistant.types import SimulationResult
 
 
@@ -168,9 +169,10 @@ class ComsolModelInfo:
     required_products: list[str]
     parameters: dict[str, str]
     studies: list[dict[str, str]]
-    jobs: list[dict[str, str]]
-    datasets: list[dict[str, str]]
-    numerical_features: list[dict[str, str]]
+    jobs: list[dict[str, Any]]
+    datasets: list[dict[str, Any]]
+    numerical_features: list[dict[str, Any]]
+    tables: list[dict[str, Any]]
     plot_groups: list[dict[str, str]]
 
     def to_dict(self) -> dict[str, Any]:
@@ -205,6 +207,11 @@ class ComsolAdapter(SimulationAdapter):
         model_info = inspect_mph(config.model_path)
         selected_study = _select_study(config.study_tag, config.job_tag, model_info)
         selected_plots = validate_plot_selection(config.plot_tags, model_info.plot_groups)
+        result_pipeline = inspect_result_pipeline(
+            model_info.to_dict(),
+            selected_study=selected_study,
+            selected_job=config.job_tag,
+        )
         contract_report = None
         if config.contract_path is not None:
             contract = load_model_contract(config.contract_path)
@@ -329,6 +336,7 @@ class ComsolAdapter(SimulationAdapter):
                 "model_contract": (
                     contract_report.to_dict() if contract_report is not None else None
                 ),
+                "result_pipeline": result_pipeline.to_dict(),
                 "selected_plot_groups": selected_plots,
                 **plot_export_metadata,
                 "table_results_status": (
@@ -373,15 +381,19 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
         with zipfile.ZipFile(path) as archive:
             model_info_root = ElementTree.fromstring(archive.read("modelinfo.xml"))
             smodel = json.loads(archive.read("smodel.json"))
+            try:
+                dmodel_root = ElementTree.fromstring(archive.read("dmodel.xml"))
+            except KeyError:
+                dmodel_root = ElementTree.Element("Model")
             licenses = archive.read("usedlicenses.txt").decode("utf-8").splitlines()
     except (KeyError, OSError, ValueError, zipfile.BadZipFile) as exc:
         raise ValueError(f"Unable to inspect COMSOL model: {path}") from exc
 
     parameters: dict[str, str] = {}
     studies: list[dict[str, str]] = []
-    jobs: list[dict[str, str]] = []
-    datasets: list[dict[str, str]] = []
-    numerical_features: list[dict[str, str]] = []
+    jobs: list[dict[str, Any]] = []
+    datasets: list[dict[str, Any]] = []
+    numerical_features: list[dict[str, Any]] = []
     plot_groups: list[dict[str, str]] = []
     for node in _walk_json(smodel):
         api_class = str(node.get("apiClass", ""))
@@ -402,6 +414,7 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
                     "tag": str(node.get("tag", "")),
                     "label": str(node.get("label", "")),
                     "type": str(node.get("apiType", "")),
+                    "steps": _job_steps(node),
                 }
             )
         elif api_class in {"Data", "Dataset", "DatasetFeature"}:
@@ -410,6 +423,7 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
                     "tag": str(node.get("tag", "")),
                     "label": str(node.get("label", "")),
                     "type": str(node.get("apiType", "")),
+                    "active": bool(node.get("isActive", True)),
                 }
             )
         elif api_class == "NumericalFeature":
@@ -418,6 +432,7 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
                     "tag": str(node.get("tag", "")),
                     "label": str(node.get("label", "")),
                     "type": str(node.get("apiType", "")),
+                    "active": bool(node.get("isActive", True)),
                 }
             )
         elif api_class == "ResultFeature" and str(node.get("apiType", "")).startswith(
@@ -437,6 +452,11 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
     physics_node = model_info_root.find("physicsInfo")
     if physics_node is not None:
         physics_value = physics_node.get("physics", physics_value)
+    tables = _merge_pipeline_metadata(
+        dmodel_root,
+        datasets=datasets,
+        numerical_features=numerical_features,
+    )
     return ComsolModelInfo(
         filename=path.name,
         comsol_version=model_info_root.get("comsolVersion"),
@@ -449,6 +469,7 @@ def inspect_mph(model_path: str | Path) -> ComsolModelInfo:
         jobs=jobs,
         datasets=datasets,
         numerical_features=numerical_features,
+        tables=tables,
         plot_groups=plot_groups,
     )
 
@@ -492,6 +513,11 @@ def check_comsol(
             selected_study=selected_study,
             selected_job=config.job_tag,
         )
+    result_pipeline = inspect_result_pipeline(
+        info.to_dict(),
+        selected_study=selected_study,
+        selected_job=config.job_tag,
+    )
     return {
         "status": contract_report.status if contract_report is not None else "ok",
         "executable": str(config.executable.resolve()),
@@ -505,6 +531,7 @@ def check_comsol(
         ],
         "output_symbols": output_symbols,
         "contract": contract_report.to_dict() if contract_report is not None else None,
+        "result_pipeline": result_pipeline.to_dict(),
         "output_symbols_note": (
             "These symbols come from saved single-row COMSOL tables. They become "
             "fresh run metrics only when a configured job sequence reevaluates "
@@ -757,6 +784,201 @@ def _validate_plot_tag_syntax(selected_tags: tuple[str, ...] | list[str]) -> lis
     if len(tags) > MAX_SELECTED_PLOTS:
         raise ValueError(f"Select no more than {MAX_SELECTED_PLOTS} COMSOL plot groups")
     return tags
+
+
+def _job_steps(job_node: dict[str, Any]) -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = []
+    for node in _walk_json(job_node):
+        if node is job_node:
+            continue
+        api_class = str(node.get("apiClass", ""))
+        if api_class not in {"JobFeature", "BatchFeature"} and not api_class.endswith(
+            "JobFeature"
+        ):
+            continue
+        step_type = str(node.get("apiType") or node.get("type") or "")
+        label = str(node.get("label") or node.get("displayLabel") or "")
+        steps.append(
+            {
+                "tag": str(node.get("tag", "")),
+                "label": label,
+                "type": step_type,
+                "category": _job_step_category(step_type, label),
+                "active": bool(node.get("isActive", True)),
+            }
+        )
+    return steps
+
+
+def _job_step_category(step_type: str, label: str) -> str:
+    text = f"{step_type} {label}".lower()
+    if any(token in text for token in ("evaluate", "evaluation", "derived", "numerical")):
+        return "evaluation"
+    if any(token in text for token in ("study", "solve", "stationary", "frequency", "time dependent")):
+        return "solve"
+    if "save" in text:
+        return "save"
+    return "other"
+
+
+def _merge_pipeline_metadata(
+    root: ElementTree.Element,
+    *,
+    datasets: list[dict[str, Any]],
+    numerical_features: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    solver_studies: dict[str, str] = {}
+    for solver in root.iter("SolverSequence"):
+        tag = str(solver.get("tag", ""))
+        study_tag = _path_tag(solver.findtext("study"))
+        if tag and study_tag:
+            solver_studies[tag] = study_tag
+
+    dataset_details: dict[str, dict[str, Any]] = {}
+    for node in root.iter("DatasetFeature"):
+        tag = str(node.get("tag", ""))
+        if not tag:
+            continue
+        solution_tag = _property_reference(node, "p:solution")
+        dataset_details[tag] = {
+            "tag": tag,
+            "label": str(node.get("name", "")),
+            "type": str(node.get("op", "")),
+            "solution_tag": solution_tag,
+            "source_dataset_tag": _property_reference(node, "p:data"),
+            "study_tag": solver_studies.get(solution_tag or ""),
+            "evaluated": _property_value(node, "p:hasbeenevaluated") == "on",
+            "status": (node.findtext("status") or "unknown").lower(),
+        }
+    for tag in dataset_details:
+        _resolve_dataset_study(tag, dataset_details, set())
+    _merge_feature_details(datasets, dataset_details)
+
+    numerical_details: dict[str, dict[str, Any]] = {}
+    for node in root.iter("NumericalFeature"):
+        tag = str(node.get("tag", ""))
+        if not tag:
+            continue
+        numerical_details[tag] = {
+            "tag": tag,
+            "label": str(node.get("name", "")),
+            "type": str(node.get("op", "")),
+            "dataset_tag": _property_reference(node, "p:data"),
+            "table_tag": _property_reference(node, "p:table"),
+            "expressions": _property_matrix(node, "p:expr"),
+            "units": _property_matrix(node, "p:unit"),
+            "evaluated": _property_value(node, "p:hasbeenevaluated") == "on",
+            "status": (node.findtext("status") or "unknown").lower(),
+        }
+    _merge_feature_details(numerical_features, numerical_details)
+
+    tables: list[dict[str, Any]] = []
+    for node in root.iter("TableFeature"):
+        tag = str(node.get("tag", ""))
+        if not tag:
+            continue
+        columns_node = node.find("columnHeaders")
+        columns = _parse_comsol_headers(
+            columns_node.text if columns_node is not None and columns_node.text else ""
+        )
+        real_data = node.find("realData")
+        values = (
+            [item for item in (real_data.text or "").split(",") if item.strip()]
+            if real_data is not None
+            else []
+        )
+        tables.append(
+            {
+                "tag": tag,
+                "label": str(node.get("name", "")),
+                "status": (node.findtext("status") or "unknown").lower(),
+                "columns": columns,
+                "row_count": len(values) // len(columns) if columns else 0,
+                "has_data": bool(values and columns),
+                "source_label": (node.findtext("entityComments") or "").strip(),
+            }
+        )
+    return tables
+
+
+def _merge_feature_details(
+    features: list[dict[str, Any]],
+    details: dict[str, dict[str, Any]],
+) -> None:
+    indexed = {str(feature.get("tag", "")): feature for feature in features}
+    for tag, detail in details.items():
+        existing = indexed.get(tag)
+        if existing is None:
+            features.append(dict(detail))
+            continue
+        for key, value in detail.items():
+            if key not in {"label", "type"} or not existing.get(key):
+                existing[key] = value
+
+
+def _resolve_dataset_study(
+    tag: str,
+    details: dict[str, dict[str, Any]],
+    visited: set[str],
+) -> str | None:
+    if tag in visited:
+        return None
+    visited.add(tag)
+    dataset = details.get(tag)
+    if dataset is None:
+        return None
+    if dataset.get("study_tag"):
+        return str(dataset["study_tag"])
+    source = str(dataset.get("source_dataset_tag") or "")
+    if not source:
+        return None
+    study = _resolve_dataset_study(source, details, visited)
+    if study:
+        dataset["study_tag"] = study
+    return study
+
+
+def _property_node(
+    feature: ElementTree.Element,
+    name: str,
+) -> ElementTree.Element | None:
+    return next(
+        (node for node in feature.findall("propertyValue") if node.get("name") == name),
+        None,
+    )
+
+
+def _property_reference(feature: ElementTree.Element, name: str) -> str | None:
+    node = _property_node(feature, name)
+    return _path_tag(node.get("Reference")) if node is not None else None
+
+
+def _property_value(feature: ElementTree.Element, name: str) -> str | None:
+    node = _property_node(feature, name)
+    return node.get("value") if node is not None else None
+
+
+def _property_matrix(feature: ElementTree.Element, name: str) -> list[str]:
+    node = _property_node(feature, name)
+    if node is None:
+        return []
+    value = str(node.get("valueMatrix", ""))
+    _shape, separator, payload = value.partition("|")
+    if not separator:
+        return []
+    parsed = next(csv.reader([payload], quotechar="'", skipinitialspace=True), [])
+    if not parsed:
+        return []
+    try:
+        count = int(parsed[0])
+    except ValueError:
+        return []
+    return [item.strip() for item in parsed[1 : count + 1]]
+
+
+def _path_tag(value: str | None) -> str | None:
+    rendered = str(value or "").strip().rstrip("/")
+    return rendered.rsplit("/", 1)[-1] if rendered else None
 
 
 def extract_mph_tables(model_path: str | Path, max_rows: int = 1000) -> list[dict[str, Any]]:

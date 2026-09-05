@@ -461,22 +461,29 @@
       byId('connectionState').textContent = 'Checking...';
       try {
         const report = await api('/api/comsol/check', { method: 'POST', body: JSON.stringify({ connection: connectionPayload() }) });
-        state.verified = true; state.report = report;
-        byId('connectionState').textContent = 'Connected'; byId('connectionState').className = 'connection-state ok';
+        const blocked = report.status === 'blocked';
+        const pipeline = report.result_pipeline || {};
+        const pipelineStatus = pipeline.status || 'unknown';
+        state.verified = !blocked; state.report = report;
+        byId('connectionState').textContent = blocked ? 'Blocked' : 'Connected'; byId('connectionState').className = blocked ? 'connection-state' : 'connection-state ok';
         byId('modelName').textContent = report.model.filename;
         byId('modelVersion').textContent = `${report.installed_version || 'COMSOL'} · model ${report.model.comsol_version || 'version unknown'}`;
         const chips = byId('modelChips'); chips.replaceChildren();
         [...(report.model.physics || []), ...(report.license_requirements || [])].forEach(value => { const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = value; chips.append(chip); });
+        const pipelineChip = document.createElement('span'); pipelineChip.className = 'chip'; pipelineChip.textContent = `Pipeline: ${pipelineStatus}`; chips.append(pipelineChip);
         byId('modelCard').className = 'model-card visible';
         if (report.selected_study) byId('studyTag').value = report.selected_study;
         const list = byId('parameterList'); list.replaceChildren();
-        Object.entries(report.model.parameters || {}).forEach(([name, value]) => addParameterRow(name, value));
+        const designInputs = new Set(report.contract?.design_inputs || []);
+        Object.entries(report.model.parameters || {}).filter(([name]) => !report.contract || designInputs.has(name)).forEach(([name, value]) => addParameterRow(name, value));
         if (!list.children.length) renderEmptyParameters();
-        byId('runNow').disabled = false; byId('queueOnly').disabled = false;
-        byId('stepConnect').className = 'step done'; byId('stepConfigure').className = 'step active';
-        byId('assistantSummary').textContent = `Ready to run ${report.model.filename}. Review the imported parameter values before starting.`;
-        addMessage('Connection verified', `${report.model.filename} is runnable and the required licenses are available.`, 'success');
-        notify('COMSOL connection verified.');
+        byId('runNow').disabled = blocked; byId('queueOnly').disabled = blocked;
+        byId('stepConnect').className = blocked ? 'step active' : 'step done'; byId('stepConfigure').className = blocked ? 'step' : 'step active';
+        const firstFinding = pipeline.findings?.[0];
+        const findingText = firstFinding ? ` ${firstFinding.message} Action: ${firstFinding.action}` : '';
+        byId('assistantSummary').textContent = `Result pipeline: ${pipelineStatus}.${findingText}`;
+        addMessage(blocked ? 'Connection blocked' : 'Connection verified', `${report.model.filename} · result pipeline: ${pipelineStatus}.${findingText}`, blocked ? 'error' : (pipelineStatus === 'fresh' ? 'success' : 'info'));
+        notify(blocked ? 'Resolve the model contract findings before running.' : `COMSOL connected · pipeline ${pipelineStatus}.`, blocked);
       } catch (error) {
         state.verified = false; byId('connectionState').textContent = 'Check failed'; byId('connectionState').className = 'connection-state';
         addMessage('Connection check failed', error.message, 'error'); notify(error.message, true);

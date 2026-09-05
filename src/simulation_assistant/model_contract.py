@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from simulation_assistant.quantities import parse_quantity, reference_unit
+from simulation_assistant.result_pipeline import inspect_result_pipeline
 
 
 CONTRACT_SCHEMA_VERSION = 1
@@ -252,6 +253,11 @@ def evaluate_model_contract(
             )
 
     symbols = list(output_symbols)
+    pipeline = inspect_result_pipeline(
+        model,
+        selected_study=selected_study,
+        selected_job=selected_job,
+    )
     bindings: dict[str, str] = {}
     for output in contract.outputs:
         matches = [
@@ -273,12 +279,12 @@ def evaluate_model_contract(
         symbol = matches[0]
         bindings[output.name] = str(symbol.get("key", ""))
         _check_output_unit(output, symbol, issues)
-        if output.fresh and not selected_job:
+        if output.fresh and pipeline.status != "fresh":
             _issue(
                 issues,
                 "error" if output.required else "warning",
-                "fresh_output_requires_job",
-                f"Output '{output.name}' requires a job sequence that reevaluates Derived Values.",
+                "fresh_output_pipeline_unverified",
+                f"Output '{output.name}' requires a verified solve-to-evaluation Job Sequence.",
             )
 
     status = (

@@ -52,8 +52,24 @@ def model_data() -> dict:
             "coil_turns": "10",
         },
         "studies": [{"tag": "std1"}],
-        "jobs": [{"tag": "batch1"}],
-        "datasets": [{"tag": "dset1"}],
+        "jobs": [
+            {
+                "tag": "batch1",
+                "steps": [
+                    {"tag": "solve1", "category": "solve"},
+                    {"tag": "eval1", "category": "evaluation"},
+                ],
+            }
+        ],
+        "datasets": [{"tag": "dset1", "study_tag": "std1"}],
+        "numerical_features": [
+            {
+                "tag": "gev1",
+                "dataset_tag": "dset1",
+                "table_tag": "tbl1",
+            }
+        ],
+        "tables": [{"tag": "tbl1", "columns": ["value (H)"]}],
     }
 
 
@@ -141,6 +157,30 @@ class ModelContractTests(unittest.TestCase):
 
         self.assertEqual(report.status, "blocked")
         self.assertIn("output_unit_mismatch", {issue.code for issue in report.issues})
+
+    def test_blocks_job_outputs_when_evaluation_step_is_missing(self) -> None:
+        model = model_data()
+        model["jobs"][0]["steps"] = [{"tag": "solve1", "category": "solve"}]
+        report = evaluate_model_contract(
+            parse_model_contract(contract_data()),
+            model,
+            [
+                {
+                    "key": "tbl1_2_value_h",
+                    "table_tag": "tbl1",
+                    "column": "value (H)",
+                    "unit": "H",
+                }
+            ],
+            selected_study=None,
+            selected_job="batch1",
+        )
+
+        self.assertEqual(report.status, "blocked")
+        self.assertIn(
+            "fresh_output_pipeline_unverified",
+            {issue.code for issue in report.issues},
+        )
 
     def test_rejects_invalid_run_units_limits_and_internal_overrides(self) -> None:
         contract = parse_model_contract(contract_data())

@@ -42,6 +42,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Constrained sweep ranking with maximize/minimize objectives and CSV export
 - Unit-aware parameter comparison with SI normalization and dimension checks
 - Versioned COMSOL model contracts with pre-run compatibility and limit checks
+- COMSOL result-pipeline inspection with freshness states and corrective guidance
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -117,6 +118,12 @@ The desktop workspace provides native file pickers, COMSOL validation, editable
 model inputs, computed-output formulas, Run now and Queue only actions, run
 details, local artifact access, and visual comparison for repeated simulation
 states. It does not start an HTTP server or require a browser.
+
+After **Check connection**, the workspace reports whether the selected target's
+result pipeline is **Fresh**, **Stale**, **Incomplete**, or **Unknown**. Choose
+**View pipeline** to inspect the exact Study, Dataset, Derived Values, and Table
+links, along with the expressions, units, Job Sequence steps, and recommended
+corrections. See [`docs/RESULT_PIPELINE.md`](docs/RESULT_PIPELINE.md).
 
 The **Runs** tab also provides persistent **Pause queue**, **Cancel selected**,
 **Stop selected**, and **Recover interrupted** controls. Pausing prevents the next
@@ -340,20 +347,20 @@ versioned contract schema, desktop preflight states, and WPT example.
 
 Versioned WPT model contracts now define visible design inputs, protected
 internal parameters, required outputs, units, table bindings, and safe limits.
+COMSOL result-pipeline inspection now verifies the links between Study, Dataset,
+Derived Values, Table, and Job Sequence steps before treating outputs as fresh.
 Future increments prioritize trustworthy WPT results before expanding secondary
 interfaces or deployment options:
 
-1. Expand COMSOL job-sequence, numerical-evaluation, and result-table discovery
-   during model inspection, then report deeper contract compatibility before a run.
-2. Add a scientific validation gate for freshness, required metrics, reciprocity,
+1. Add a scientific validation gate for required metrics, reciprocity,
    physical bounds, mesh quality, and solver warnings.
-3. Add an explicit storage-retention policy before running large production
+2. Add an explicit storage-retention policy before running large production
    sweeps with copied MPH files.
-4. Run and document the baseline 36-state gap, offset, and tilt sweep with the
+3. Run and document the baseline 36-state gap, offset, and tilt sweep with the
    production IBC model.
-5. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
-6. Add robust grouped objectives across misalignment states.
-7. Validate selected designs against a higher-fidelity volume reference model.
+4. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
+5. Add robust grouped objectives across misalignment states.
+6. Validate selected designs against a higher-fidelity volume reference model.
 
 Production and reference MPH files remain local and are never committed to this
 repository.
@@ -373,6 +380,7 @@ src/simulation_assistant/
 |-- profiles.py     # Local workspace profiles and sanitized template export
 |-- quantities.py   # Unit parsing, dimensions, and SI normalization
 |-- ranking.py      # Constrained objective ranking and CSV export
+|-- result_pipeline.py # COMSOL output lineage and freshness inspection
 |-- telegram_api.py # Minimal Telegram Bot API client
 |-- telegram_bot.py # Authorized long-polling command bot
 |-- reporting.py    # JSON and SVG artifacts

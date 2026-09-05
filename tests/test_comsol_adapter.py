@@ -95,6 +95,12 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(info.studies, [{"tag": "std1", "label": "Study 1"}])
         self.assertEqual(info.jobs[0]["tag"], "batch1")
         self.assertEqual(info.datasets[0]["tag"], "dset1")
+        self.assertEqual(info.datasets[0]["study_tag"], "std1")
+        self.assertEqual(info.numerical_features[0]["dataset_tag"], "dset1")
+        self.assertEqual(info.numerical_features[0]["table_tag"], "tbl1")
+        self.assertEqual(info.numerical_features[0]["expressions"], ["L_primary"])
+        self.assertEqual(info.tables[0]["tag"], "tbl1")
+        self.assertTrue(info.tables[0]["has_data"])
         self.assertEqual(
             info.plot_groups,
             [
@@ -268,6 +274,7 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(report["output_symbols"][0]["key"], "tbl1_1_frequency_hz")
         self.assertEqual(report["selected_plot_groups"][0]["tag"], "pg1")
         self.assertEqual(len(report["model"]["plot_groups"]), 2)
+        self.assertEqual(report["result_pipeline"]["status"], "stale")
         self.assertEqual(len(fake_process.commands), 2)
 
     def test_catalogs_formula_symbols_from_scalar_tables(self) -> None:
@@ -318,6 +325,7 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(report["contract"]["output_bindings"]["inductance"], "tbl1_2_value_h")
         self.assertEqual(result.metrics["inductance"], 1.2e-7)
         self.assertEqual(result.metadata["model_contract"]["contract_name"], "test-model")
+        self.assertEqual(result.metadata["result_pipeline"]["status"], "fresh")
 
     def test_validates_plot_group_selection(self) -> None:
         plots = inspect_mph(self.model).plot_groups
@@ -357,6 +365,20 @@ def _write_test_mph(path: Path) -> None:
                 "apiType": "JobSequence",
                 "tag": "batch1",
                 "label": "Batch 1",
+                "nodes": [
+                    {
+                        "apiClass": "JobFeature",
+                        "apiType": "Study",
+                        "tag": "solve1",
+                        "label": "Study 1",
+                    },
+                    {
+                        "apiClass": "JobFeature",
+                        "apiType": "EvaluateDerivedValues",
+                        "tag": "eval1",
+                        "label": "Evaluate Derived Values",
+                    },
+                ],
             },
             {
                 "apiClass": "DatasetFeature",
@@ -386,7 +408,24 @@ def _write_test_mph(path: Path) -> None:
     }
     dmodel = """<?xml version="1.0" encoding="UTF-8"?>
 <Model>
+  <SolverSequence tag="sol1" name="Solution 1">
+    <study>/study/std1</study>
+  </SolverSequence>
+  <DatasetFeature op="Solution" tag="dset1" name="Solution 1">
+    <propertyValue name="p:solution" Reference="/sol/sol1" />
+    <propertyValue name="p:hasbeenevaluated" value="on" />
+  </DatasetFeature>
+  <NumericalFeature op="EvalGlobal" tag="gev1" name="Global Evaluation 1">
+    <status>BUILT</status>
+    <propertyValue name="p:hasbeenevaluated" value="on" />
+    <propertyValue name="p:data" Reference="/result/dataset/dset1" />
+    <propertyValue name="p:table" Reference="/result/table/tbl1" />
+    <propertyValue name="p:expr" valueMatrix="1|1,'L_primary'" />
+    <propertyValue name="p:unit" valueMatrix="1|1,'H'" />
+  </NumericalFeature>
   <TableFeature tag="tbl1" name="Metrics">
+    <status>BUILT</status>
+    <entityComments>Global Evaluation 1</entityComments>
     <realData>85000.0,1.2E-7</realData>
     <columnHeaders>2,'frequency (Hz)','value (H)'</columnHeaders>
   </TableFeature>
