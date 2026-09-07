@@ -900,7 +900,7 @@ class DesktopApp:
         widths = {
             "id": 60,
             "batch": 220,
-            "status": 90,
+            "status": 145,
             "progress": 260,
             "adapter": 85,
             "attempts": 75,
@@ -1152,16 +1152,25 @@ class DesktopApp:
 
         self.ranking_tree = ttk.Treeview(
             results,
-            columns=("rank", "job", "objective", "constraints", "parameters", "finished"),
+            columns=(
+                "rank",
+                "job",
+                "objective",
+                "validation",
+                "constraints",
+                "parameters",
+                "finished",
+            ),
             show="headings",
         )
         for column, heading, width in (
             ("rank", "RANK", 60),
             ("job", "JOB", 65),
-            ("objective", "OBJECTIVE VALUE", 145),
-            ("constraints", "CONSTRAINT VALUES", 300),
-            ("parameters", "INPUT STATE", 400),
-            ("finished", "FINISHED", 160),
+            ("objective", "OBJECTIVE VALUE", 130),
+            ("validation", "VALIDATION", 105),
+            ("constraints", "CONSTRAINT VALUES", 240),
+            ("parameters", "INPUT STATE", 310),
+            ("finished", "FINISHED", 145),
         ):
             self.ranking_tree.heading(column, text=heading)
             self.ranking_tree.column(
@@ -2330,7 +2339,24 @@ class DesktopApp:
         metadata = (job.result or {}).get("metadata", {})
         formula_errors = metadata.get("formula_errors", {})
         plot_errors = metadata.get("plot_export_errors", {})
-        if job.status == JobStatus.SUCCEEDED and (formula_errors or plot_errors):
+        validation = metadata.get("scientific_validation", {})
+        validation_status = (
+            str(validation.get("status", ""))
+            if isinstance(validation, dict)
+            else ""
+        )
+        if job.status == JobStatus.SUCCEEDED and validation_status == "rejected":
+            finding_count = len(validation.get("findings", []))
+            self.activity_var.set(
+                f"Job #{job_id} solved, but scientific validation rejected the result "
+                f"with {finding_count} finding(s)."
+            )
+        elif job.status == JobStatus.SUCCEEDED and validation_status == "warning":
+            finding_count = len(validation.get("findings", []))
+            self.activity_var.set(
+                f"Job #{job_id} solved with {finding_count} scientific validation warning(s)."
+            )
+        elif job.status == JobStatus.SUCCEEDED and (formula_errors or plot_errors):
             issues = len(formula_errors) + len(plot_errors)
             self.activity_var.set(
                 f"Job #{job_id} succeeded; {issues} optional output(s) need attention."
@@ -2360,6 +2386,15 @@ class DesktopApp:
                 if job.status == JobStatus.RUNNING and job.stop_requested_at
                 else job.status.value
             )
+            validation = (job.result or {}).get("metadata", {}).get(
+                "scientific_validation", {}
+            )
+            if (
+                job.status == JobStatus.SUCCEEDED
+                and isinstance(validation, dict)
+                and validation.get("status") in {"warning", "rejected"}
+            ):
+                status_label = f"succeeded · {validation['status']}"
             progress_label = ""
             if job.adapter == "comsol" and job.status == JobStatus.RUNNING:
                 progress_label = inspect_job_progress(job).summary
@@ -2536,6 +2571,9 @@ class DesktopApp:
         ):
             live_tab = self._add_live_monitor(notebook, job.id, window)
         metadata = (job.result or {}).get("metadata", {})
+        validation_values = self._validation_detail_values(
+            metadata.get("scientific_validation")
+        )
         identity_model = job.run_context.get("model", {})
         if not isinstance(identity_model, dict):
             identity_model = {}
@@ -2586,6 +2624,7 @@ class DesktopApp:
             ("Inputs", job.parameters),
             ("Formulas", job.output_formulas),
             ("Metrics", (job.result or {}).get("metrics", {})),
+            ("Validation", validation_values),
             ("Plot exports", plot_values),
             ("Plot errors", metadata.get("plot_export_errors", {})),
             (
@@ -2628,6 +2667,31 @@ class DesktopApp:
             style="Primary.TButton",
             command=window.destroy,
         ).pack(side="right")
+
+    @staticmethod
+    def _validation_detail_values(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            return {"status": "Not recorded for this run"}
+        details: dict[str, Any] = {
+            "status": str(value.get("status", "unknown")).capitalize(),
+            "checked_metrics": ", ".join(
+                str(name) for name in value.get("checked_metrics", [])
+            ),
+        }
+        findings = value.get("findings", [])
+        if isinstance(findings, list):
+            for index, finding in enumerate(findings, 1):
+                if not isinstance(finding, dict):
+                    continue
+                level = str(finding.get("level", "finding")).upper()
+                message = str(finding.get("message", ""))
+                action = str(finding.get("action", ""))
+                observed = finding.get("observed")
+                suffix = f" Observed: {observed}." if observed is not None else ""
+                details[f"{index}. {level}"] = (
+                    f"{message}{suffix} Action: {action}"
+                )
+        return details
 
     def _add_live_monitor(
         self,
@@ -3290,11 +3354,20 @@ class DesktopApp:
             self.ranking_batch_var.set(batches[0])
         batch_name = self.ranking_batch_var.get()
         batch_jobs = [job for job in successful_jobs if job.batch_name == batch_name]
+        rankable_batch_jobs = [
+            job
+            for job in batch_jobs
+            if (job.result or {})
+            .get("metadata", {})
+            .get("scientific_validation", {})
+            .get("status")
+            != "rejected"
+        ]
 
         objective_names = sorted(
             {
                 str(name)
-                for job in batch_jobs
+                for job in rankable_batch_jobs
                 for name, value in (job.result or {}).get("metrics", {}).items()
                 if (
                     isinstance(value, (int, float))
@@ -3304,13 +3377,13 @@ class DesktopApp:
             }
         )
         candidate_input_names = sorted(
-            {str(name) for job in batch_jobs for name in job.parameters}
+            {str(name) for job in rankable_batch_jobs for name in job.parameters}
         )
         self.ranking_objective.configure(values=objective_names)
         if self.ranking_objective_var.get() not in objective_names:
             formula_names = {
                 name
-                for job in batch_jobs
+                for job in rankable_batch_jobs
                 for name in job.output_formulas
                 if name in objective_names
             }
@@ -3324,7 +3397,11 @@ class DesktopApp:
         field_lookup: dict[str, tuple[str, str]] = {}
         field_dimensions: dict[str, str | None] = {}
         for name in candidate_input_names:
-            values = [job.parameters[name] for job in batch_jobs if name in job.parameters]
+            values = [
+                job.parameters[name]
+                for job in rankable_batch_jobs
+                if name in job.parameters
+            ]
             try:
                 dimension = common_quantity_dimension(values)
             except ValueError:
@@ -3429,11 +3506,15 @@ class DesktopApp:
             self.ranking_summary_var.set(
                 f"Best {objective}: {self._format_number(best.objective_value)} at "
                 f"Job #{best.job_id} · {result.qualifying_jobs} qualified · "
-                f"{result.rejected_jobs} rejected · {result.missing_values} missing"
+                f"{result.rejected_jobs} constraint rejected · "
+                f"{result.validation_rejected_jobs} validation rejected · "
+                f"{result.missing_values} missing"
             )
         else:
             self.ranking_summary_var.set(
-                f"No run satisfies every constraint · {result.rejected_jobs} rejected · "
+                f"No run satisfies every constraint · "
+                f"{result.rejected_jobs} constraint rejected · "
+                f"{result.validation_rejected_jobs} validation rejected · "
                 f"{result.missing_values} missing"
             )
         constraint_labels = {constraint.key: constraint for constraint in constraints}
@@ -3458,6 +3539,7 @@ class DesktopApp:
                     row.rank,
                     f"#{row.job_id}",
                     self._format_number(row.objective_value),
+                    row.validation_status.replace("_", " ").title(),
                     constraint_text,
                     parameter_text,
                     row.finished_at.replace("T", " "),

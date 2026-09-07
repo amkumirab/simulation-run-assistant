@@ -65,7 +65,15 @@ desktop app shows a warning but preserves the original unrestricted workflow.
       "required": true,
       "fresh": true
     }
-  ]
+  ],
+  "validation": {
+    "require_fresh_pipeline": true,
+    "solver_warnings": "warning",
+    "convergence_issues": "error",
+    "bounds": [
+      {"metric": "efficiency", "min": 0, "max": 100, "unit": "%"}
+    ]
+  }
 }
 ```
 
@@ -109,6 +117,39 @@ non-blocking optional output.
 study-only batch command does not automatically reevaluate Derived Values. The
 job sequence should include the solve, required evaluations, and any save step.
 
+### Scientific validation
+
+The optional `validation` object defines post-run acceptance rules. Required
+contract outputs are automatically required metrics. Add other names to
+`required_metrics` when computed or solver metrics must also be present.
+
+Each item in `bounds` selects a metric and supplies `min`, `max`, or both.
+Limits are inclusive unless `exclusive_min` or `exclusive_max` is true. Set
+`unit` to the exact output scale used by the bound. A bound can have severity
+`error` or `warning`.
+
+Reciprocity rules compare two metrics using a relative tolerance:
+
+```json
+{
+  "reciprocity": [
+    {
+      "left": "mutual_inductance_12",
+      "right": "mutual_inductance_21",
+      "relative_tolerance": 0.02,
+      "severity": "error"
+    }
+  ]
+}
+```
+
+Both reciprocal outputs must use the same declared unit. The relative tolerance
+is a fraction, so `0.02` means two percent. `solver_warnings` and
+`convergence_issues` accept `ignore`, `warning`, or `error`.
+
+See [`SCIENTIFIC_VALIDATION.md`](SCIENTIFIC_VALIDATION.md) for execution states,
+WPT guidance, and ranking behavior.
+
 ## What is checked
 
 The connection preflight verifies:
@@ -128,6 +169,6 @@ when the desktop interface is bypassed.
 ## Versioning guidance
 
 Increase the contract version whenever a parameter role, limit, unit, target,
-dataset, or output binding changes. Keep old contracts beside archived result
+dataset, output binding, or validation rule changes. Keep old contracts beside archived result
 sets when exact reproducibility matters. Do not place local model paths,
 licenses, customer identifiers, or result data in the contract.

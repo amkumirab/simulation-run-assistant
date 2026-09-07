@@ -532,7 +532,8 @@
         const row = tbody.insertRow(); row.tabIndex = 0; row.setAttribute('aria-label', `Open job ${job.id}`);
         const id = row.insertCell(); const code = document.createElement('code'); code.textContent = `#${job.id}`; id.append(code);
         [job.batch_name, job.adapter].forEach(value => { const cell = row.insertCell(); cell.textContent = value; });
-        const statusCell = row.insertCell(); const badge = document.createElement('span'); badge.className = `status ${job.status}`; badge.textContent = job.stop_requested_at && job.status === 'running' ? 'stopping' : job.status; statusCell.append(badge);
+        const validationStatus = job.result?.metadata?.scientific_validation?.status;
+        const statusCell = row.insertCell(); const badge = document.createElement('span'); badge.className = `status ${job.status}`; badge.textContent = job.stop_requested_at && job.status === 'running' ? 'stopping' : (job.status === 'succeeded' && ['warning', 'rejected'].includes(validationStatus) ? `${job.status} · ${validationStatus}` : job.status); statusCell.append(badge);
         row.insertCell().textContent = job.progress?.summary || '—';
         row.insertCell().textContent = job.attempts; row.insertCell().textContent = shortDate(job.created_at);
         row.addEventListener('click', () => showJob(job.id)); row.addEventListener('keydown', event => { if (event.key === 'Enter') showJob(job.id); });
@@ -557,6 +558,7 @@
         body.append(grid);
         appendObjectSection(body, 'Parameters', job.parameters);
         if (job.result?.metrics) appendObjectSection(body, 'Result metrics', job.result.metrics);
+        if (job.result?.metadata?.scientific_validation) appendObjectSection(body, 'Scientific validation', job.result.metadata.scientific_validation);
         if (job.artifact_dir) appendObjectSection(body, 'Artifacts', { directory: job.artifact_dir });
         if (job.error) { const error = document.createElement('div'); error.className = 'error-box'; error.textContent = job.error; body.append(error); }
         const raw = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = 'Show raw job data';

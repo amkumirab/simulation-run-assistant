@@ -213,8 +213,10 @@ class ComsolAdapter(SimulationAdapter):
             selected_job=config.job_tag,
         )
         contract_report = None
+        validation_policy = None
         if config.contract_path is not None:
             contract = load_model_contract(config.contract_path)
+            validation_policy = contract.validation
             try:
                 output_symbols = catalog_mph_output_symbols(config.model_path)
             except ValueError:
@@ -286,7 +288,7 @@ class ComsolAdapter(SimulationAdapter):
 
         _raise_if_cancelled(cancel_requested)
         tables = extract_mph_tables(output_model)
-        tables_are_fresh = config.job_tag is not None
+        tables_are_fresh = result_pipeline.status == "fresh"
         metrics = _table_metrics(tables) if tables_are_fresh else {}
         if contract_report is not None and tables_are_fresh:
             metrics = apply_output_bindings(metrics, contract_report)
@@ -336,6 +338,12 @@ class ComsolAdapter(SimulationAdapter):
                 "model_contract": (
                     contract_report.to_dict() if contract_report is not None else None
                 ),
+                "validation_policy": (
+                    validation_policy.to_dict()
+                    if validation_policy is not None
+                    else None
+                ),
+                "solver_diagnostics": _solver_diagnostics(batch_log),
                 "result_pipeline": result_pipeline.to_dict(),
                 "selected_plot_groups": selected_plots,
                 **plot_export_metadata,
@@ -1192,6 +1200,10 @@ def _solver_log_metrics(path: Path) -> dict[str, float]:
         "degrees_of_freedom": r"Number of degrees of freedom solved for:\s*([0-9]+)",
         "comsol_reported_run_seconds": r"Run time:\s*([0-9.]+)\s*s\.",
         "comsol_reported_total_seconds": r"Total time:\s*([0-9.]+)\s*s\.",
+        "minimum_mesh_quality": (
+            r"Minimum(?: mesh)? element quality:\s*"
+            r"([0-9]+(?:\.[0-9]*)?(?:[eE][+-]?[0-9]+)?)"
+        ),
     }
     metrics: dict[str, float] = {}
     for key, pattern in patterns.items():
@@ -1199,6 +1211,39 @@ def _solver_log_metrics(path: Path) -> dict[str, float]:
         if matches:
             metrics[key] = float(matches[-1])
     return metrics
+
+
+def _solver_diagnostics(path: Path) -> dict[str, list[str]]:
+    diagnostics: dict[str, list[str]] = {
+        "warnings": [],
+        "errors": [],
+        "convergence_issues": [],
+    }
+    if not path.is_file():
+        return diagnostics
+    convergence_phrases = (
+        "did not converge",
+        "failed to find a solution",
+        "no convergence",
+        "not converged",
+        "singular matrix",
+    )
+    for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", raw_line).strip()
+        if not line:
+            continue
+        lowered = line.casefold()
+        category = None
+        if any(phrase in lowered for phrase in convergence_phrases):
+            category = "convergence_issues"
+        elif re.match(r"^(?:\[[^]]+\]\s*)?error\s*[:\-]", line, re.IGNORECASE):
+            category = "errors"
+        elif re.match(r"^(?:\[[^]]+\]\s*)?warning\s*[:\-]", line, re.IGNORECASE):
+            category = "warnings"
+        if category and line[:300] not in diagnostics[category]:
+            diagnostics[category].append(line[:300])
+            diagnostics[category] = diagnostics[category][:20]
+    return diagnostics
 
 
 def _positive_int(value: Any, name: str) -> int:

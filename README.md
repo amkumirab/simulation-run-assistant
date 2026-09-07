@@ -43,6 +43,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Unit-aware parameter comparison with SI normalization and dimension checks
 - Versioned COMSOL model contracts with pre-run compatibility and limit checks
 - COMSOL result-pipeline inspection with freshness states and corrective guidance
+- Scientific result validation for bounds, reciprocity, solver diagnostics, and freshness
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -197,6 +198,14 @@ double-click any ranked row to open its complete job details. Ranking CSV files
 contain the objective, evaluated constraint values, and input state without local
 artifact paths. See [`docs/RESULT_RANKING.md`](docs/RESULT_RANKING.md).
 
+Every completed run also receives a separate scientific-validation state:
+**Valid**, **Warning**, or **Rejected**. Validation can enforce required outputs,
+physical ranges, reciprocal quantities, fresh result pipelines, solver warnings,
+convergence, and mesh-quality limits. A rejected solve remains available for
+diagnosis but is automatically excluded from result ranking. Open a run's
+**Validation** tab for its findings and corrective actions. See
+[`docs/SCIENTIFIC_VALIDATION.md`](docs/SCIENTIFIC_VALIDATION.md).
+
 Dimensional parameter values are normalized before charting or constraint
 evaluation, so `0.15[m]`, `15[cm]`, and `150[mm]` compare as the same length.
 Unknown units, non-finite values, and incompatible physical dimensions are not
@@ -349,18 +358,18 @@ Versioned WPT model contracts now define visible design inputs, protected
 internal parameters, required outputs, units, table bindings, and safe limits.
 COMSOL result-pipeline inspection now verifies the links between Study, Dataset,
 Derived Values, Table, and Job Sequence steps before treating outputs as fresh.
+Post-run scientific validation now separates solver completion from result
+acceptance and prevents rejected states from entering design ranking.
 Future increments prioritize trustworthy WPT results before expanding secondary
 interfaces or deployment options:
 
-1. Add a scientific validation gate for required metrics, reciprocity,
-   physical bounds, mesh quality, and solver warnings.
-2. Add an explicit storage-retention policy before running large production
+1. Add an explicit storage-retention policy before running large production
    sweeps with copied MPH files.
-3. Run and document the baseline 36-state gap, offset, and tilt sweep with the
+2. Run and document the baseline 36-state gap, offset, and tilt sweep with the
    production IBC model.
-4. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
-5. Add robust grouped objectives across misalignment states.
-6. Validate selected designs against a higher-fidelity volume reference model.
+3. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
+4. Add robust grouped objectives across misalignment states.
+5. Validate selected designs against a higher-fidelity volume reference model.
 
 Production and reference MPH files remain local and are never committed to this
 repository.
@@ -387,6 +396,7 @@ src/simulation_assistant/
 |-- runner.py       # Failure-isolated worker loop
 |-- storage.py      # SQLite queue and state transitions
 |-- sweeps.py       # Native sweep parsing, estimates, and CSV comparison export
+|-- validation.py   # Scientific result acceptance rules and findings
 `-- web.py          # Dependency-free dashboard and JSON API
 ```
 

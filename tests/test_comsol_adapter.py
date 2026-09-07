@@ -20,9 +20,15 @@ from simulation_assistant.adapters.base import SimulationCancelled
 
 
 class FakeComsolProcess:
-    def __init__(self, *, failed_plot_tags: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        failed_plot_tags: set[str] | None = None,
+        solver_log: str = "COMSOL batch completed\n",
+    ) -> None:
         self.commands: list[list[str]] = []
         self.failed_plot_tags = failed_plot_tags or set()
+        self.solver_log = solver_log
 
     def __call__(self, command, **kwargs):
         command = [str(value) for value in command]
@@ -57,7 +63,7 @@ class FakeComsolProcess:
         output_model = Path(command[command.index("-outputfile") + 1])
         batch_log = Path(command[command.index("-batchlog") + 1])
         shutil.copy2(input_model, output_model)
-        batch_log.write_text("COMSOL batch completed\n", encoding="utf-8")
+        batch_log.write_text(self.solver_log, encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "", "")
 
 
@@ -154,6 +160,28 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(result.metadata["plot_exports"][0]["tag"], "pg1")
         self.assertTrue(Path(result.metadata["plot_exports"][0]["path"]).is_file())
         self.assertEqual(len(fake_process.commands), 3)
+
+    def test_collects_solver_diagnostics_and_mesh_quality(self) -> None:
+        fake_process = FakeComsolProcess(
+            solver_log=(
+                "Minimum mesh element quality: 0.082\n"
+                "Warning: Mesh refinement is recommended\n"
+                "Failed to find a solution at one continuation step\n"
+            )
+        )
+
+        result = ComsolAdapter(
+            replace(self.config(use_job=True), plot_tags=()), fake_process
+        ).run(
+            {"frequency": "90[kHz]"},
+            work_dir=self.root / "diagnostic-job",
+        )
+
+        self.assertEqual(result.metrics["minimum_mesh_quality"], 0.082)
+        self.assertEqual(len(result.metadata["solver_diagnostics"]["warnings"]), 1)
+        self.assertEqual(
+            len(result.metadata["solver_diagnostics"]["convergence_issues"]), 1
+        )
 
     def test_uses_cancellable_runner_for_an_active_queue_job(self) -> None:
         checks = iter([False, True])
@@ -326,6 +354,10 @@ class ComsolAdapterTests(unittest.TestCase):
         self.assertEqual(result.metrics["inductance"], 1.2e-7)
         self.assertEqual(result.metadata["model_contract"]["contract_name"], "test-model")
         self.assertEqual(result.metadata["result_pipeline"]["status"], "fresh")
+        self.assertEqual(
+            result.metadata["validation_policy"]["required_metrics"],
+            ["inductance"],
+        )
 
     def test_validates_plot_group_selection(self) -> None:
         plots = inspect_mph(self.model).plot_groups

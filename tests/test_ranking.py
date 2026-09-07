@@ -18,7 +18,13 @@ def make_job(
     status: JobStatus = JobStatus.SUCCEEDED,
     parameters: dict | None = None,
     metrics: dict | None = None,
+    validation_status: str | None = None,
 ) -> Job:
+    metadata = (
+        {"scientific_validation": {"status": validation_status}}
+        if validation_status
+        else {}
+    )
     return Job(
         id=job_id,
         batch_name=batch,
@@ -26,7 +32,7 @@ def make_job(
         status=status,
         parameters=parameters or {},
         output_formulas={},
-        result={"metrics": metrics or {}},
+        result={"metrics": metrics or {}, "metadata": metadata},
         error=None,
         artifact_dir=f"artifacts/job-{job_id:06d}",
         attempts=1,
@@ -103,6 +109,27 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(result.missing_values, 1)
         self.assertEqual(result.qualifying_jobs, 3)
 
+    def test_excludes_scientifically_rejected_runs(self) -> None:
+        jobs = [
+            *self.jobs,
+            make_job(
+                4,
+                metrics={"coupling": 0.99},
+                validation_status="rejected",
+            ),
+            make_job(
+                5,
+                metrics={"coupling": 0.9},
+                validation_status="warning",
+            ),
+        ]
+
+        result = rank_sweep_results(jobs, "coupling")
+
+        self.assertEqual([row.job_id for row in result.rows], [5, 2, 3, 1])
+        self.assertEqual(result.validation_rejected_jobs, 1)
+        self.assertEqual(result.considered_jobs, 5)
+
     def test_rejects_invalid_configuration(self) -> None:
         with self.assertRaisesRegex(ValueError, "source"):
             RankingConstraint("metric", "losses", "<", 10)
@@ -130,6 +157,7 @@ class RankingTests(unittest.TestCase):
 
         self.assertEqual(rows[0]["rank"], "1")
         self.assertEqual(rows[0]["job_id"], "3")
+        self.assertEqual(rows[0]["scientific_validation"], "not_recorded")
         self.assertEqual(rows[0]["input:gap"], "12[cm]")
         self.assertEqual(rows[0]["constraint:output:losses"], "9.0")
         self.assertNotIn("artifact_dir", rows[0])

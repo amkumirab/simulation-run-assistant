@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.20.0] - 2026-09-07
+
+### Added
+
+- Post-run scientific validation with Valid, Warning, and Rejected states
+- Contract rules for required metrics, physical bounds, and reciprocity tolerance
+- Configurable handling of solver warnings and convergence issues
+- COMSOL solver-diagnostic extraction and minimum mesh-quality metrics
+- Validation reports in JSON artifacts, native run details, and the local dashboard
+- WPT validation examples for power, efficiency, and mesh-quality limits
+
+### Changed
+
+- Scientifically rejected runs remain in history but are excluded from ranking
+- Result tables are treated as fresh only when the inspected pipeline is Fresh
+- Ranking summaries distinguish constraint and scientific-validation rejection
+- Package version increased to 0.20.0
+
 ## [0.19.0] - 2026-09-05
 
 ### Added

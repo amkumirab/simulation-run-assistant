@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -16,6 +17,11 @@ from simulation_assistant.formulas import evaluate_output_formulas
 from simulation_assistant.reporting import write_artifacts
 from simulation_assistant.storage import JobStore
 from simulation_assistant.types import Job, JobStatus, SimulationResult
+from simulation_assistant.validation import (
+    ValidationPolicy,
+    parse_validation_policy,
+    validate_scientific_result,
+)
 
 
 @dataclass(frozen=True)
@@ -118,11 +124,30 @@ class SimulationRunner:
                     series=result.series,
                     metadata=metadata,
                 )
+            metadata = dict(result.metadata)
+            raw_policy = metadata.get("validation_policy")
+            policy = (
+                parse_validation_policy(raw_policy)
+                if isinstance(raw_policy, Mapping)
+                else ValidationPolicy()
+            )
+            validation = validate_scientific_result(
+                result.metrics,
+                metadata,
+                policy,
+            )
+            metadata["scientific_validation"] = validation.to_dict()
+            result = SimulationResult(
+                metrics=result.metrics,
+                series=result.series,
+                metadata=metadata,
+            )
             artifact_dir = write_artifacts(self.artifact_root, job, result)
             self.store.mark_succeeded(job.id, result.to_dict(), str(artifact_dir))
             self._notify_safely(
                 f"Simulation #{job.id} succeeded\n"
-                f"Batch: {job.batch_name}\nAdapter: {job.adapter}"
+                f"Batch: {job.batch_name}\nAdapter: {job.adapter}\n"
+                f"Scientific validation: {validation.status}"
             )
             return JobStatus.SUCCEEDED
         except SimulationCancelled as exc:

@@ -85,6 +85,7 @@ class RankedRun:
     batch_name: str
     objective: str
     objective_value: float
+    validation_status: str
     parameters: dict[str, Any]
     constraint_values: dict[str, float]
     finished_at: str
@@ -98,6 +99,7 @@ class RankingResult:
     qualifying_jobs: int
     rejected_jobs: int
     missing_values: int
+    validation_rejected_jobs: int
 
 
 def rank_sweep_results(
@@ -124,12 +126,19 @@ def rank_sweep_results(
     considered = 0
     rejected = 0
     missing = 0
+    validation_rejected = 0
     for job in jobs:
         if job.status != JobStatus.SUCCEEDED:
             continue
         if batch_name and job.batch_name != batch_name:
             continue
         considered += 1
+        validation = (job.result or {}).get("metadata", {}).get(
+            "scientific_validation", {}
+        )
+        if isinstance(validation, dict) and validation.get("status") == "rejected":
+            validation_rejected += 1
+            continue
         metrics = (job.result or {}).get("metrics", {})
         objective_value = _finite_number(metrics.get(objective_name))
         if objective_value is None:
@@ -167,6 +176,11 @@ def rank_sweep_results(
                 batch_name=job.batch_name,
                 objective=objective_name,
                 objective_value=objective_value,
+                validation_status=(
+                    str(validation.get("status", "not_recorded"))
+                    if isinstance(validation, dict)
+                    else "not_recorded"
+                ),
                 parameters=dict(job.parameters),
                 constraint_values=values,
                 finished_at=job.finished_at or "",
@@ -186,6 +200,7 @@ def rank_sweep_results(
         qualifying_jobs=qualifying,
         rejected_jobs=rejected,
         missing_values=missing,
+        validation_rejected_jobs=validation_rejected,
     )
 
 
@@ -211,6 +226,7 @@ def write_ranking_csv(path: str | Path, result: RankingResult) -> Path:
         "batch_name",
         "objective",
         "objective_value",
+        "scientific_validation",
         *[f"input:{name}" for name in parameter_names],
         *[constraint_headers[name] for name in constraint_names],
         "finished_at",
@@ -226,6 +242,7 @@ def write_ranking_csv(path: str | Path, result: RankingResult) -> Path:
                     "batch_name": row.batch_name,
                     "objective": row.objective,
                     "objective_value": row.objective_value,
+                    "scientific_validation": row.validation_status,
                     **{
                         f"input:{name}": row.parameters.get(name, "")
                         for name in parameter_names

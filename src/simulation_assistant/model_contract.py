@@ -8,6 +8,7 @@ from typing import Any, Iterable, Mapping
 
 from simulation_assistant.quantities import parse_quantity, reference_unit
 from simulation_assistant.result_pipeline import inspect_result_pipeline
+from simulation_assistant.validation import ValidationPolicy, parse_validation_policy
 
 
 CONTRACT_SCHEMA_VERSION = 1
@@ -48,6 +49,7 @@ class ModelContract:
     inputs: tuple[ContractInput, ...]
     internal_parameters: tuple[str, ...]
     outputs: tuple[ContractOutput, ...]
+    validation: ValidationPolicy
     schema_version: int = CONTRACT_SCHEMA_VERSION
 
     def to_dict(self) -> dict[str, Any]:
@@ -146,6 +148,15 @@ def parse_model_contract(data: Mapping[str, Any]) -> ModelContract:
     output_names = [item.name for item in outputs]
     if len(output_names) != len(set(output_names)):
         raise ValueError("Model contract output names must be unique")
+    output_units = {item.name: item.unit for item in outputs}
+    required_metrics = [item.name for item in outputs if item.required]
+    fresh_required = any(item.required and item.fresh for item in outputs)
+    validation = parse_validation_policy(
+        data.get("validation"),
+        implicit_required_metrics=required_metrics,
+        require_fresh_pipeline=fresh_required,
+        metric_units=output_units,
+    )
 
     return ModelContract(
         name=name,
@@ -158,6 +169,7 @@ def parse_model_contract(data: Mapping[str, Any]) -> ModelContract:
         inputs=inputs,
         internal_parameters=internal_parameters,
         outputs=outputs,
+        validation=validation,
         schema_version=schema_version,
     )
 

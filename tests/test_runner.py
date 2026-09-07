@@ -9,6 +9,7 @@ from simulation_assistant.adapters.base import SimulationCancelled
 from simulation_assistant.runner import SimulationRunner
 from simulation_assistant.storage import JobStore
 from simulation_assistant.types import JobStatus
+from simulation_assistant.types import SimulationResult
 
 
 class RunnerTests(unittest.TestCase):
@@ -41,6 +42,43 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(payload["job_id"], job_id)
         self.assertEqual(payload["run_signature"], job.run_signature)
         self.assertEqual(payload["run_context"], {"model": {"name": "demo.mph"}})
+        self.assertEqual(
+            payload["result"]["metadata"]["scientific_validation"]["status"],
+            "valid",
+        )
+
+    def test_scientifically_rejected_result_remains_in_run_history(self) -> None:
+        class InvalidResultAdapter:
+            name = "invalid-result"
+
+            def run(self, parameters, *, work_dir=None):
+                return SimulationResult(
+                    metrics={"coupling": 1.3},
+                    series=[],
+                    metadata={
+                        "validation_policy": {
+                            "bounds": [
+                                {"metric": "coupling", "min": 0, "max": 1}
+                            ]
+                        }
+                    },
+                )
+
+        job_id = self.store.enqueue_batch(
+            "invalid-result", "invalid-result", [{"gap": 10}]
+        )[0]
+        summary = SimulationRunner(
+            self.store,
+            self.root / "artifacts",
+            adapters=[InvalidResultAdapter()],
+        ).run_job(job_id)
+
+        job = self.store.get(job_id)
+        self.assertEqual(summary.succeeded, 1)
+        self.assertEqual(job.status, JobStatus.SUCCEEDED)
+        validation = job.result["metadata"]["scientific_validation"]
+        self.assertEqual(validation["status"], "rejected")
+        self.assertEqual(validation["findings"][0]["code"], "metric_out_of_bounds")
 
     def test_failed_job_can_be_retried(self) -> None:
         job_id = self.store.enqueue_batch(

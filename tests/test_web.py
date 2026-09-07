@@ -103,6 +103,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Connect COMSOL", body)
         self.assertIn("Configure a run", body)
         self.assertIn("Run queue", body)
+        self.assertIn("Scientific validation", body)
         self.assertNotIn("__API_TOKEN__", body)
 
     def test_write_actions_require_the_session_token(self) -> None:

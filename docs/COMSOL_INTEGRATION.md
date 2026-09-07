@@ -224,6 +224,17 @@ Formula errors do not discard a successful COMSOL solution. Successfully
 computed values are added to result metrics, while individual formula errors
 are stored in result metadata and shown in the run-details window.
 
+### Scientific validation
+
+After formulas are evaluated, every completed result passes through the
+scientific validation gate. With a model contract, required output bindings,
+physical bounds, reciprocity tolerance, result-pipeline freshness, solver-log
+warnings, convergence indicators, and mesh-quality limits can be enforced.
+Operational completion remains `succeeded`; scientific acceptance is recorded
+separately as Valid, Warning, or Rejected. Rejected runs remain inspectable but
+are not eligible for ranking. See
+[`SCIENTIFIC_VALIDATION.md`](SCIENTIFIC_VALIDATION.md).
+
 ### Fresh physical outputs
 
 The symbols shown from an MPH model initially describe saved table columns and

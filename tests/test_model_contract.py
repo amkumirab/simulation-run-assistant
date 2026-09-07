@@ -83,6 +83,28 @@ class ModelContractTests(unittest.TestCase):
         self.assertEqual(contract.name, "wpt-baseline")
         self.assertEqual(contract.inputs[0].minimum, "70[kHz]")
         self.assertEqual(contract.outputs[0].table_tag, "tbl1")
+        self.assertEqual(contract.validation.required_metrics, ("inductance",))
+        self.assertTrue(contract.validation.require_fresh_pipeline)
+
+    def test_loads_scientific_validation_rules(self) -> None:
+        data = contract_data()
+        data["validation"] = {
+            "bounds": [
+                {
+                    "metric": "inductance",
+                    "min": 0,
+                    "unit": "H",
+                    "exclusive_min": True,
+                }
+            ],
+            "solver_warnings": "error",
+        }
+
+        contract = parse_model_contract(data)
+
+        self.assertEqual(contract.validation.bounds[0].metric, "inductance")
+        self.assertTrue(contract.validation.bounds[0].exclusive_minimum)
+        self.assertEqual(contract.validation.solver_warnings, "error")
 
     def test_reports_ready_and_builds_stable_output_binding(self) -> None:
         contract = parse_model_contract(contract_data())
