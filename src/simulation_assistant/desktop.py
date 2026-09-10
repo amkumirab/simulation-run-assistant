@@ -56,6 +56,12 @@ from simulation_assistant.ranking import (
     rank_sweep_results,
     write_ranking_csv,
 )
+from simulation_assistant.retention import (
+    RetentionPolicy,
+    StoragePlan,
+    apply_storage_plan,
+    build_storage_plan,
+)
 from simulation_assistant.runner import SimulationRunner
 from simulation_assistant.storage import JobStore
 from simulation_assistant.sweeps import (
@@ -869,6 +875,12 @@ class DesktopApp:
         self.recover_jobs_button.pack(side="left", padx=(8, 0))
         ttk.Button(
             controls,
+            text="Storage manager",
+            style="Secondary.TButton",
+            command=self._open_storage_manager,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            controls,
             text="Refresh",
             style="Secondary.TButton",
             command=self.refresh_jobs,
@@ -916,6 +928,293 @@ class DesktopApp:
         self.jobs_tree.grid(row=1, column=0, sticky="nsew")
         self.jobs_tree.bind("<Double-1>", self._open_selected_job)
         self.jobs_tree.bind("<<TreeviewSelect>>", self._queue_selection_changed)
+
+    def _open_storage_manager(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Artifact storage manager")
+        window.geometry("980x700")
+        window.minsize(820, 560)
+        window.transient(self.root)
+
+        container = ttk.Frame(window, style="Card.TFrame", padding=18)
+        container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(3, weight=1)
+
+        ttk.Label(
+            container,
+            text="Artifact storage manager",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            container,
+            text=(
+                "Preview reclaimable storage before removing copied model files or "
+                "completed run folders. Job records and metrics remain in the database."
+            ),
+            style="CardText.TLabel",
+            wraplength=900,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 14))
+
+        controls = ttk.Frame(container, style="Card.TFrame")
+        controls.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        keep_days = tk.StringVar(value="30")
+        keep_latest = tk.StringVar(value="5")
+        max_gb = tk.StringVar()
+        remove_models = tk.BooleanVar(value=False)
+        remove_orphans = tk.BooleanVar(value=False)
+        summary = tk.StringVar(value="Choose Scan to inspect local artifacts.")
+        current_plan: StoragePlan | None = None
+
+        for column, (label, variable, width) in enumerate(
+            (
+                ("Keep days", keep_days, 8),
+                ("Latest per batch", keep_latest, 8),
+                ("Maximum total GB", max_gb, 10),
+            )
+        ):
+            group = ttk.Frame(controls, style="Card.TFrame")
+            group.grid(row=0, column=column, sticky="w", padx=(0, 14))
+            ttk.Label(group, text=label, style="Field.TLabel").pack(anchor="w")
+            ttk.Entry(group, textvariable=variable, width=width).pack(
+                anchor="w", pady=(4, 0)
+            )
+        ttk.Checkbutton(
+            controls,
+            text="Remove output.mph from eligible runs",
+            variable=remove_models,
+        ).grid(row=0, column=3, sticky="w", padx=(0, 14))
+        ttk.Checkbutton(
+            controls,
+            text="Include orphan job folders",
+            variable=remove_orphans,
+        ).grid(row=0, column=4, sticky="w")
+
+        body = ttk.Panedwindow(container, orient="vertical")
+        body.grid(row=3, column=0, sticky="nsew")
+        inventory_frame = ttk.Frame(body, style="Card.TFrame")
+        history_frame = ttk.Frame(body, style="Card.TFrame")
+        body.add(inventory_frame, weight=3)
+        body.add(history_frame, weight=1)
+
+        inventory = ttk.Treeview(
+            inventory_frame,
+            columns=("item", "batch", "status", "size", "decision"),
+            show="headings",
+            height=12,
+        )
+        for name, label, width in (
+            ("item", "ITEM", 100),
+            ("batch", "BATCH", 190),
+            ("status", "STATUS", 100),
+            ("size", "SIZE", 100),
+            ("decision", "PLAN / PROTECTION", 360),
+        ):
+            inventory.heading(name, text=label)
+            inventory.column(name, width=width, stretch=name in {"batch", "decision"})
+        inventory.pack(fill="both", expand=True)
+
+        ttk.Label(history_frame, text="Cleanup history", style="CardTitle.TLabel").pack(
+            anchor="w", pady=(10, 6)
+        )
+        history = ttk.Treeview(
+            history_frame,
+            columns=("time", "action", "item", "reclaimed"),
+            show="headings",
+            height=5,
+        )
+        for name, label, width in (
+            ("time", "TIME", 180),
+            ("action", "ACTION", 160),
+            ("item", "ITEM", 300),
+            ("reclaimed", "RECLAIMED", 110),
+        ):
+            history.heading(name, text=label)
+            history.column(name, width=width, stretch=name == "item")
+        history.pack(fill="both", expand=True)
+
+        def read_optional_integer(value: str, label: str) -> int | None:
+            cleaned = value.strip()
+            if not cleaned:
+                return None
+            try:
+                parsed = int(cleaned)
+            except ValueError as exc:
+                raise ValueError(f"{label} must be a whole number") from exc
+            return parsed
+
+        def selected_best_ids() -> list[int]:
+            if self.current_ranking_result and self.current_ranking_result.rows:
+                return [self.current_ranking_result.rows[0].job_id]
+            return []
+
+        def scan() -> None:
+            nonlocal current_plan
+            try:
+                days = read_optional_integer(keep_days.get(), "Keep days")
+                latest = read_optional_integer(keep_latest.get(), "Latest per batch")
+                maximum_text = max_gb.get().strip()
+                maximum = None
+                if maximum_text:
+                    maximum_value = float(maximum_text)
+                    if maximum_value < 0:
+                        raise ValueError("Maximum total GB cannot be negative")
+                    maximum = int(maximum_value * 1024 * 1024 * 1024)
+                policy = RetentionPolicy(
+                    keep_days=days,
+                    keep_latest_per_batch=latest,
+                    max_total_bytes=maximum,
+                    remove_output_models=remove_models.get(),
+                    remove_orphans=remove_orphans.get(),
+                )
+                current_plan = build_storage_plan(
+                    self.store,
+                    self.artifact_root,
+                    policy,
+                    protected_job_ids=selected_best_ids(),
+                )
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Storage policy", str(exc), parent=window)
+                return
+            inventory.delete(*inventory.get_children())
+            action_reasons = {
+                action.job_id: action.reason
+                for action in current_plan.actions
+                if action.job_id is not None
+            }
+            for entry in current_plan.entries:
+                if entry.planned_action:
+                    decision = f"Remove · {action_reasons.get(entry.job_id, entry.planned_action)}"
+                elif entry.missing:
+                    decision = "Missing artifact folder"
+                elif entry.protected_reasons:
+                    decision = "Protected · " + ", ".join(entry.protected_reasons)
+                else:
+                    decision = "Keep"
+                inventory.insert(
+                    "",
+                    "end",
+                    iid=f"job:{entry.job_id}",
+                    values=(
+                        f"Job #{entry.job_id}",
+                        entry.batch_name,
+                        entry.status,
+                        format_file_size(entry.size_bytes),
+                        decision,
+                    ),
+                )
+            for orphan in current_plan.orphans:
+                inventory.insert(
+                    "",
+                    "end",
+                    iid=f"orphan:{orphan.name}",
+                    values=(
+                        orphan.name,
+                        "Unreferenced",
+                        "orphan",
+                        format_file_size(orphan.size_bytes),
+                        "Remove" if orphan.planned_action else "Keep · enable orphan cleanup",
+                    ),
+                )
+            summary.set(
+                f"Stored: {format_file_size(current_plan.total_bytes)} · "
+                f"planned actions: {len(current_plan.actions)} · "
+                f"reclaimable: {format_file_size(current_plan.reclaimable_bytes)}"
+            )
+            refresh_history()
+
+        def toggle_pin() -> None:
+            selected = inventory.selection()
+            if len(selected) != 1 or not selected[0].startswith("job:"):
+                messagebox.showinfo(
+                    "Pin run",
+                    "Select one job row to pin or unpin it.",
+                    parent=window,
+                )
+                return
+            job_id = int(selected[0].split(":", 1)[1])
+            job = self.store.get(job_id)
+            self.store.set_pinned(job_id, not job.pinned)
+            scan()
+
+        def refresh_history() -> None:
+            history.delete(*history.get_children())
+            for event in self.store.retention_history(limit=25):
+                history.insert(
+                    "",
+                    "end",
+                    values=(
+                        event["created_at"].replace("T", " "),
+                        event["action"],
+                        event["artifact_name"],
+                        format_file_size(event["bytes_reclaimed"]),
+                    ),
+                )
+
+        def apply_cleanup() -> None:
+            if current_plan is None:
+                messagebox.showinfo(
+                    "Storage cleanup",
+                    "Scan the artifact storage before applying a cleanup.",
+                    parent=window,
+                )
+                return
+            if not current_plan.actions:
+                messagebox.showinfo(
+                    "Storage cleanup",
+                    "The current plan has no files to remove.",
+                    parent=window,
+                )
+                return
+            confirmed = messagebox.askyesno(
+                "Confirm artifact cleanup",
+                f"Remove {len(current_plan.actions)} artifact item(s) and reclaim up to "
+                f"{format_file_size(current_plan.reclaimable_bytes)}?\n\n"
+                "Job records and result metrics will remain available.",
+                parent=window,
+            )
+            if not confirmed:
+                return
+            try:
+                result = apply_storage_plan(current_plan, self.store)
+            except Exception as exc:
+                messagebox.showerror("Storage cleanup", str(exc), parent=window)
+                return
+            self.refresh_jobs()
+            scan()
+            messagebox.showinfo(
+                "Storage cleanup",
+                f"Completed: {result.completed_actions}\n"
+                f"Skipped: {result.skipped_actions}\n"
+                f"Reclaimed: {format_file_size(result.reclaimed_bytes)}",
+                parent=window,
+            )
+
+        footer = ttk.Frame(container, style="Card.TFrame")
+        footer.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        ttk.Label(footer, textvariable=summary, style="CardText.TLabel").pack(
+            side="left"
+        )
+        ttk.Button(
+            footer,
+            text="Scan",
+            style="Secondary.TButton",
+            command=scan,
+        ).pack(side="right", padx=(8, 0))
+        ttk.Button(
+            footer,
+            text="Pin / unpin selected",
+            style="Secondary.TButton",
+            command=toggle_pin,
+        ).pack(side="right", padx=(8, 0))
+        ttk.Button(
+            footer,
+            text="Apply cleanup",
+            style="Primary.TButton",
+            command=apply_cleanup,
+        ).pack(side="right")
+        refresh_history()
+        scan()
 
     def _build_compare(self, parent: ttk.Frame) -> None:
         parent.grid_columnconfigure(0, weight=1)

@@ -44,6 +44,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Versioned COMSOL model contracts with pre-run compatibility and limit checks
 - COMSOL result-pipeline inspection with freshness states and corrective guidance
 - Scientific result validation for bounds, reciprocity, solver diagnostics, and freshness
+- Dry-run artifact retention with pinning, protected reference runs, and cleanup history
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -206,6 +207,15 @@ diagnosis but is automatically excluded from result ranking. Open a run's
 **Validation** tab for its findings and corrective actions. See
 [`docs/SCIENTIFIC_VALIDATION.md`](docs/SCIENTIFIC_VALIDATION.md).
 
+Open **Storage manager** from the **Runs** tab before or after a large sweep to
+inspect disk usage without changing any files. Retention rules can target old
+runs, keep a chosen number of recent runs per batch, enforce a total-size limit,
+or remove only copied `output.mph` files. The manager always produces a preview
+and requires confirmation. Active jobs, pinned runs, the current ranked best
+result, and the latest accepted result in each batch are protected automatically.
+Cleanup preserves database history and normalized result metrics. See
+[`docs/ARTIFACT_RETENTION.md`](docs/ARTIFACT_RETENTION.md).
+
 Dimensional parameter values are normalized before charting or constraint
 evaluation, so `0.15[m]`, `15[cm]`, and `150[mm]` compare as the same length.
 Unknown units, non-finite values, and incompatible physical dimensions are not
@@ -363,13 +373,11 @@ acceptance and prevents rejected states from entering design ranking.
 Future increments prioritize trustworthy WPT results before expanding secondary
 interfaces or deployment options:
 
-1. Add an explicit storage-retention policy before running large production
-   sweeps with copied MPH files.
-2. Run and document the baseline 36-state gap, offset, and tilt sweep with the
+1. Run and document the baseline 36-state gap, offset, and tilt sweep with the
    production IBC model.
-3. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
-4. Add robust grouped objectives across misalignment states.
-5. Validate selected designs against a higher-fidelity volume reference model.
+2. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
+3. Add robust grouped objectives across misalignment states.
+4. Validate selected designs against a higher-fidelity volume reference model.
 
 Production and reference MPH files remain local and are never committed to this
 repository.
@@ -389,6 +397,7 @@ src/simulation_assistant/
 |-- profiles.py     # Local workspace profiles and sanitized template export
 |-- quantities.py   # Unit parsing, dimensions, and SI normalization
 |-- ranking.py      # Constrained objective ranking and CSV export
+|-- retention.py    # Safe artifact inventory, retention plans, and cleanup
 |-- result_pipeline.py # COMSOL output lineage and freshness inspection
 |-- telegram_api.py # Minimal Telegram Bot API client
 |-- telegram_bot.py # Authorized long-polling command bot

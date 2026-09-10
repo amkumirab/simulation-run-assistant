@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.21.0] - 2026-09-10
+
+### Added
+
+- Native artifact storage manager with dry-run cleanup previews
+- Retention policies for artifact age, latest runs per batch, and total size
+- Optional removal of copied output models and unreferenced job directories
+- Persistent pinning for important runs and a local cleanup history
+- Automatic protection for active, pinned, selected-best, and reference runs
+
+### Changed
+
+- Cleanup revalidates artifact paths, state, and size immediately before removal
+- Package version increased to 0.21.0
+
 ## [0.20.0] - 2026-09-07
 
 ### Added

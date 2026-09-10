@@ -48,7 +48,8 @@ class JobStore:
                     created_at TEXT NOT NULL,
                     started_at TEXT,
                     finished_at TEXT,
-                    stop_requested_at TEXT
+                    stop_requested_at TEXT,
+                    pinned INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IF NOT EXISTS idx_jobs_status_id ON jobs(status, id);
                 CREATE TABLE IF NOT EXISTS queue_settings (
@@ -57,6 +58,15 @@ class JobStore:
                 );
                 INSERT OR IGNORE INTO queue_settings(key, value)
                 VALUES ('paused', '0');
+                CREATE TABLE IF NOT EXISTS retention_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    job_id INTEGER,
+                    artifact_name TEXT NOT NULL,
+                    bytes_reclaimed INTEGER NOT NULL,
+                    details TEXT NOT NULL DEFAULT '{}'
+                );
                 """
             )
             columns = {
@@ -76,6 +86,10 @@ class JobStore:
                 )
             if "stop_requested_at" not in columns:
                 connection.execute("ALTER TABLE jobs ADD COLUMN stop_requested_at TEXT")
+            if "pinned" not in columns:
+                connection.execute(
+                    "ALTER TABLE jobs ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"
+                )
             schema = connection.execute(
                 "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
             ).fetchone()
@@ -112,17 +126,18 @@ class JobStore:
                 created_at TEXT NOT NULL,
                 started_at TEXT,
                 finished_at TEXT,
-                stop_requested_at TEXT
+                stop_requested_at TEXT,
+                pinned INTEGER NOT NULL DEFAULT 0
             );
             INSERT INTO jobs(
                 id, batch_name, adapter, status, parameters, output_formulas,
                 run_signature, run_context, result, error, artifact_dir, attempts,
-                created_at, started_at, finished_at, stop_requested_at
+                created_at, started_at, finished_at, stop_requested_at, pinned
             )
             SELECT
                 id, batch_name, adapter, status, parameters, output_formulas,
                 run_signature, run_context, result, error, artifact_dir, attempts,
-                created_at, started_at, finished_at, stop_requested_at
+                created_at, started_at, finished_at, stop_requested_at, pinned
             FROM jobs_before_status_migration;
             DROP TABLE jobs_before_status_migration;
             CREATE INDEX idx_jobs_status_id ON jobs(status, id);
@@ -395,6 +410,72 @@ class JobStore:
                 ("1" if paused else "0",),
             )
 
+    def set_pinned(self, job_id: int, pinned: bool) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE jobs SET pinned = ? WHERE id = ?",
+                (1 if pinned else 0, job_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(f"Job {job_id} was not found")
+
+    def clear_artifact_dir(self, job_id: int) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE jobs SET artifact_dir = NULL WHERE id = ?",
+                (job_id,),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(f"Job {job_id} was not found")
+
+    def record_retention_event(
+        self,
+        *,
+        action: str,
+        artifact_name: str,
+        bytes_reclaimed: int,
+        job_id: int | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO retention_events(
+                    created_at, action, job_id, artifact_name,
+                    bytes_reclaimed, details
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    utc_now(),
+                    action,
+                    job_id,
+                    artifact_name,
+                    max(0, int(bytes_reclaimed)),
+                    json.dumps(details or {}, sort_keys=True),
+                ),
+            )
+
+    def retention_history(self, limit: int = 100) -> list[dict[str, Any]]:
+        if limit < 1:
+            raise ValueError("Retention history limit must be positive")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM retention_events ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "id": int(row["id"]),
+                "created_at": str(row["created_at"]),
+                "action": str(row["action"]),
+                "job_id": int(row["job_id"]) if row["job_id"] is not None else None,
+                "artifact_name": str(row["artifact_name"]),
+                "bytes_reclaimed": int(row["bytes_reclaimed"]),
+                "details": json.loads(row["details"] or "{}"),
+            }
+            for row in rows
+        ]
+
     def recover_interrupted(self, *, requeue: bool) -> list[int]:
         """Resolve jobs left running after an interrupted worker process."""
         with self._connect() as connection:
@@ -522,4 +603,5 @@ class JobStore:
             run_signature=row["run_signature"],
             run_context=run_context,
             stop_requested_at=row["stop_requested_at"],
+            pinned=bool(row["pinned"]),
         )

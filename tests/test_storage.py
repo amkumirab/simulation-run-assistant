@@ -65,6 +65,19 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertIn("run_signature", columns)
             self.assertIn("run_context", columns)
             self.assertIn("stop_requested_at", columns)
+            self.assertIn("pinned", columns)
+
+            store.set_pinned(job_id, True)
+            self.assertTrue(store.get(job_id).pinned)
+            store.record_retention_event(
+                action="delete_output_model",
+                job_id=job_id,
+                artifact_name="job-000001/output.mph",
+                bytes_reclaimed=1024,
+            )
+            history = store.retention_history()
+            self.assertEqual(history[0]["job_id"], job_id)
+            self.assertEqual(history[0]["bytes_reclaimed"], 1024)
 
 
 if __name__ == "__main__":

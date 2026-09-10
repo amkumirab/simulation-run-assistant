@@ -47,6 +47,7 @@ class Job:
     run_signature: str | None = None
     run_context: dict[str, Any] = field(default_factory=dict)
     stop_requested_at: str | None = None
+    pinned: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
