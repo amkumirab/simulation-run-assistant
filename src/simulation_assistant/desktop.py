@@ -5,6 +5,7 @@ import re
 import threading
 import tkinter as tk
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
@@ -14,6 +15,14 @@ from simulation_assistant.adapters.comsol import (
     ComsolConfig,
     check_comsol,
     discover_comsol_executable,
+)
+from simulation_assistant.campaigns import (
+    CampaignPlan,
+    build_campaign_plan,
+    build_wpt_baseline_parameters,
+    estimate_campaign_storage_bytes,
+    write_campaign_csv,
+    write_campaign_html,
 )
 from simulation_assistant.formulas import (
     supported_formula_symbols,
@@ -37,6 +46,7 @@ from simulation_assistant.preflight import (
     RunPreflightPlan,
     build_comsol_run_context,
     build_preflight_plan,
+    build_run_signature,
 )
 from simulation_assistant.progress import format_duration, inspect_job_progress
 from simulation_assistant.profiles import (
@@ -881,6 +891,12 @@ class DesktopApp:
         ).pack(side="left", padx=(8, 0))
         ttk.Button(
             controls,
+            text="WPT campaign",
+            style="Secondary.TButton",
+            command=self._open_wpt_campaign,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            controls,
             text="Refresh",
             style="Secondary.TButton",
             command=self.refresh_jobs,
@@ -1215,6 +1231,340 @@ class DesktopApp:
         ).pack(side="right")
         refresh_history()
         scan()
+
+    def _open_wpt_campaign(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("WPT baseline campaign")
+        window.geometry("1060x720")
+        window.minsize(900, 600)
+        window.transient(self.root)
+
+        container = ttk.Frame(window, style="Card.TFrame", padding=18)
+        container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(4, weight=1)
+
+        ttk.Label(
+            container,
+            text="WPT baseline campaign",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            container,
+            text=(
+                "Run or resume the documented 36-state gap, offset, and tilt sweep. "
+                "Accepted states are reused; missing, failed, rejected, and unvalidated "
+                "states can be submitted again."
+            ),
+            style="CardText.TLabel",
+            wraplength=980,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        readiness_var = tk.StringVar(value="Checking campaign readiness...")
+        summary_var = tk.StringVar()
+        batch_var = tk.StringVar(
+            value=f"wpt-baseline-{datetime.now().strftime('%Y%m%d-%H%M')}"
+        )
+        ttk.Label(
+            container,
+            textvariable=readiness_var,
+            style="CardText.TLabel",
+            wraplength=980,
+        ).grid(row=2, column=0, sticky="w", pady=(0, 8))
+
+        settings = ttk.Frame(container, style="Card.TFrame")
+        settings.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        settings.grid_columnconfigure(1, weight=1)
+        ttk.Label(settings, text="Run label", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 8)
+        )
+        ttk.Entry(settings, textvariable=batch_var).grid(
+            row=0, column=1, sticky="ew", padx=(0, 16)
+        )
+        ttk.Label(
+            settings,
+            text="gap: 100/150/200 mm · xoff: 0/25/50/75 mm · tilt: 0/5/10 deg · yoff: 0 mm",
+            style="CardText.TLabel",
+        ).grid(row=0, column=2, sticky="e")
+
+        table_frame = ttk.Frame(container, style="Card.TFrame")
+        table_frame.grid(row=4, column=0, sticky="nsew")
+        table_frame.grid_columnconfigure(0, weight=1)
+        table_frame.grid_rowconfigure(0, weight=1)
+        tree = ttk.Treeview(
+            table_frame,
+            columns=("state", "gap", "xoff", "tilt", "status", "job"),
+            show="headings",
+            height=16,
+        )
+        for name, label, width in (
+            ("state", "STATE", 70),
+            ("gap", "GAP", 120),
+            ("xoff", "X OFFSET", 120),
+            ("tilt", "TILT", 110),
+            ("status", "STATUS", 170),
+            ("job", "LATEST JOB", 100),
+        ):
+            tree.heading(name, text=label)
+            tree.column(name, width=width, stretch=name == "status")
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        tree.tag_configure("valid", background=COLORS["teal_soft"])
+        tree.tag_configure("warning", background=COLORS["amber_soft"])
+        tree.tag_configure("rejected", background=COLORS["red_soft"])
+        tree.tag_configure("failed", background=COLORS["red_soft"])
+        tree.bind(
+            "<Double-1>",
+            lambda _event: self._show_job(
+                self.store.get(int(tree.item(tree.selection()[0], "values")[5][1:]))
+            )
+            if tree.selection() and tree.item(tree.selection()[0], "values")[5]
+            else None,
+        )
+
+        current_plan: CampaignPlan | None = None
+        current_config: ComsolConfig | None = None
+
+        def campaign_inputs() -> dict[str, str]:
+            campaign_names = {"gap", "xoff", "tilt", "yoff"}
+            values: dict[str, str] = {}
+            for name, variable in self.parameter_variables.items():
+                value = variable.get().strip()
+                if not value:
+                    raise ValueError(f"Parameter '{name}' cannot be empty")
+                if (
+                    name not in campaign_names
+                    and self.parameter_modes[name].get() == "Sweep"
+                ):
+                    raise ValueError(
+                        f"Set non-campaign parameter '{name}' to Fixed before using the preset"
+                    )
+                values[name] = value
+            return values
+
+        def build_plan() -> tuple[ComsolConfig, CampaignPlan]:
+            config = self._require_connected_config()
+            if config.contract_path is None:
+                raise ValueError("Select and validate a model contract first")
+            if not config.job_tag:
+                raise ValueError("Select a COMSOL Job Sequence instead of a Study")
+            pipeline = (self.connection_report or {}).get("result_pipeline") or {}
+            if pipeline.get("status") != "fresh":
+                raise ValueError(
+                    "The selected Job Sequence must provide a Fresh result pipeline"
+                )
+            parameters = build_wpt_baseline_parameters(campaign_inputs())
+            contract = load_model_contract(config.contract_path)
+            validate_contract_parameters(contract, parameters)
+            formulas = self._collect_formulas()
+            context = build_comsol_run_context(
+                config.model_path,
+                study_tag=config.study_tag,
+                job_tag=config.job_tag,
+                plot_tags=config.plot_tags,
+                contract_path=config.contract_path,
+            )
+            signatures = [
+                build_run_signature("comsol", values, formulas, context)
+                for values in parameters
+            ]
+            existing = self.store.list_by_run_signatures(signatures)
+            return config, build_campaign_plan(
+                parameters,
+                adapter="comsol",
+                output_formulas=formulas,
+                run_context=context,
+                existing_jobs=existing,
+            )
+
+        def refresh_campaign(*, show_error: bool = False) -> CampaignPlan | None:
+            nonlocal current_config, current_plan
+            try:
+                current_config, current_plan = build_plan()
+            except (OSError, ValueError) as exc:
+                current_config = None
+                current_plan = None
+                tree.delete(*tree.get_children())
+                readiness_var.set(f"Not ready · {exc}")
+                summary_var.set("Connect a compatible model and run Check connection.")
+                if show_error:
+                    messagebox.showerror("WPT campaign", str(exc), parent=window)
+                return None
+            tree.delete(*tree.get_children())
+            for state in current_plan.states:
+                tree.insert(
+                    "",
+                    "end",
+                    iid=f"state:{state.index}",
+                    values=(
+                        state.index,
+                        state.parameters["gap"],
+                        state.parameters["xoff"],
+                        state.parameters["tilt"],
+                        state.status,
+                        f"#{state.job_id}" if state.job_id else "",
+                    ),
+                    tags=(state.status,),
+                )
+            successful = self.store.list(status=JobStatus.SUCCEEDED, limit=20)
+            estimate = estimate_sequential_seconds(len(current_plan.pending), successful)
+            storage = estimate_campaign_storage_bytes(len(current_plan.pending), successful)
+            estimates: list[str] = []
+            if estimate is not None and current_plan.pending:
+                estimates.append(f"about {self._format_duration(estimate)}")
+            if storage is not None and current_plan.pending:
+                estimates.append(f"about {format_file_size(storage)} of output models")
+            estimate_text = " · " + " · ".join(estimates) if estimates else ""
+            readiness_var.set(
+                "Ready · model contract accepted · Job Sequence pipeline is Fresh"
+            )
+            summary_var.set(
+                f"{current_plan.completed_count} accepted · "
+                f"{current_plan.active_count} queued/running · "
+                f"{current_plan.rejected_count} rejected/unvalidated · "
+                f"{current_plan.failed_count} failed · "
+                f"{len(current_plan.pending)} to submit{estimate_text}"
+            )
+            return current_plan
+
+        def submit_campaign(*, start: bool) -> None:
+            plan = refresh_campaign(show_error=True)
+            if plan is None or current_config is None:
+                return
+            if self.busy:
+                messagebox.showinfo(
+                    "WPT campaign",
+                    "Wait for the current background operation to finish.",
+                    parent=window,
+                )
+                return
+            if start and self.store.is_queue_paused():
+                messagebox.showerror(
+                    "WPT campaign",
+                    "Resume the run queue before starting campaign jobs.",
+                    parent=window,
+                )
+                return
+            candidates = plan.candidates_to_enqueue()
+            if not candidates:
+                messagebox.showinfo(
+                    "WPT campaign",
+                    "Every state is already accepted or currently scheduled.",
+                    parent=window,
+                )
+                return
+            batch_name = batch_var.get().strip()
+            if not batch_name:
+                messagebox.showerror(
+                    "WPT campaign", "Run label cannot be empty.", parent=window
+                )
+                return
+            if not messagebox.askyesno(
+                "Confirm WPT campaign",
+                f"{'Run' if start else 'Queue'} {len(candidates)} state(s)?\n\n"
+                "Accepted and currently scheduled states will not be duplicated.",
+                parent=window,
+            ):
+                return
+            job_ids = self.store.enqueue_batch(
+                batch_name,
+                "comsol",
+                [candidate.parameters for candidate in candidates],
+                output_formulas=plan.output_formulas,
+                run_context=plan.run_context,
+            )
+            self.refresh_jobs()
+            refresh_campaign()
+            if not start:
+                self.activity_var.set(
+                    f"{len(job_ids)} WPT campaign state(s) were added to the queue."
+                )
+                return
+            self.activity_var.set(
+                f"COMSOL is processing {len(job_ids)} WPT campaign state(s)."
+            )
+            runner = self._runner(current_config)
+
+            def finished(summary: dict[str, int]) -> None:
+                self._submitted_jobs_finished(job_ids, summary)
+                if window.winfo_exists():
+                    refresh_campaign()
+
+            self._run_background(
+                "run",
+                lambda: self._run_job_ids(runner, job_ids),
+                finished,
+            )
+
+        def export_report(extension: str) -> None:
+            plan = refresh_campaign(show_error=True)
+            if plan is None:
+                return
+            destination = filedialog.asksaveasfilename(
+                parent=window,
+                title="Export WPT campaign report",
+                initialfile=f"{batch_var.get().strip() or 'wpt-baseline'}{extension}",
+                defaultextension=extension,
+                filetypes=[
+                    ("CSV file", "*.csv")
+                    if extension == ".csv"
+                    else ("HTML report", "*.html")
+                ],
+            )
+            if not destination:
+                return
+            try:
+                output = (
+                    write_campaign_csv(destination, plan)
+                    if extension == ".csv"
+                    else write_campaign_html(destination, plan)
+                )
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Export campaign", str(exc), parent=window)
+                return
+            self.activity_var.set(f"WPT campaign report exported to {output.name}.")
+
+        footer = ttk.Frame(container, style="Card.TFrame")
+        footer.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        footer.grid_columnconfigure(0, weight=1)
+        ttk.Label(footer, textvariable=summary_var, style="CardText.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        actions = ttk.Frame(footer, style="Card.TFrame")
+        actions.grid(row=0, column=1, sticky="e")
+        ttk.Button(
+            actions,
+            text="Refresh",
+            style="Secondary.TButton",
+            command=refresh_campaign,
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="Export CSV",
+            style="Secondary.TButton",
+            command=lambda: export_report(".csv"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Export HTML",
+            style="Secondary.TButton",
+            command=lambda: export_report(".html"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Queue remaining",
+            style="Secondary.TButton",
+            command=lambda: submit_campaign(start=False),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Run remaining",
+            style="Primary.TButton",
+            command=lambda: submit_campaign(start=True),
+        ).pack(side="left", padx=(8, 0))
+        refresh_campaign()
 
     def _build_compare(self, parent: ttk.Frame) -> None:
         parent.grid_columnconfigure(0, weight=1)

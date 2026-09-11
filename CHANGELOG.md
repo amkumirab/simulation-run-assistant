@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.22.0] - 2026-09-11
+
+### Added
+
+- Native 36-state WPT baseline campaign workspace
+- Fixed gap, lateral-offset, and tilt preset with preserved model inputs
+- Campaign readiness gate for model contracts and fresh Job Sequence pipelines
+- Resumable submission of missing, failed, rejected, and unvalidated states
+- Per-state status table with runtime and output-model storage estimates
+- Portable CSV and self-contained HTML campaign reports
+
+### Changed
+
+- Accepted or currently scheduled campaign states are never duplicated on resume
+- Package version increased to 0.22.0
+
 ## [0.21.0] - 2026-09-10
 
 ### Added

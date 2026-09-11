@@ -45,6 +45,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - COMSOL result-pipeline inspection with freshness states and corrective guidance
 - Scientific result validation for bounds, reciprocity, solver diagnostics, and freshness
 - Dry-run artifact retention with pinning, protected reference runs, and cleanup history
+- Resumable 36-state WPT baseline campaigns with readiness and capacity estimates
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -216,6 +217,15 @@ result, and the latest accepted result in each batch are protected automatically
 Cleanup preserves database history and normalized result metrics. See
 [`docs/ARTIFACT_RETENTION.md`](docs/ARTIFACT_RETENTION.md).
 
+Choose **WPT campaign** from the **Runs** tab to prepare the standard 36-state
+alignment sweep over gap, lateral offset, and tilt. The campaign opens only after
+the selected model contract is accepted and the Job Sequence result pipeline is
+Fresh. It reuses accepted results, recognizes queued and running states, and can
+submit only missing, failed, rejected, or unvalidated states after an interrupted
+session. The workspace also estimates sequential runtime and output-model storage
+from recent COMSOL jobs and exports portable CSV or HTML status reports. See
+[`docs/WPT_BASELINE_CAMPAIGN.md`](docs/WPT_BASELINE_CAMPAIGN.md).
+
 Dimensional parameter values are normalized before charting or constraint
 evaluation, so `0.15[m]`, `15[cm]`, and `150[mm]` compare as the same length.
 Unknown units, non-finite values, and incompatible physical dimensions are not
@@ -373,8 +383,8 @@ acceptance and prevents rejected states from entering design ranking.
 Future increments prioritize trustworthy WPT results before expanding secondary
 interfaces or deployment options:
 
-1. Run and document the baseline 36-state gap, offset, and tilt sweep with the
-   production IBC model.
+1. Run the prepared baseline campaign with the local production IBC model and
+   review its accepted result set.
 2. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
 3. Add robust grouped objectives across misalignment states.
 4. Validate selected designs against a higher-fidelity volume reference model.
@@ -387,6 +397,7 @@ repository.
 ```text
 src/simulation_assistant/
 |-- adapters/       # Solver boundary, mock model, COMSOL batch adapter
+|-- campaigns.py    # Resumable WPT campaign planning and portable reports
 |-- cli.py          # Command-line interface
 |-- desktop.py      # Native Tkinter assistant
 |-- formulas.py     # Safe computed-output expression engine
