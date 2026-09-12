@@ -46,6 +46,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Scientific result validation for bounds, reciprocity, solver diagnostics, and freshness
 - Dry-run artifact retention with pinning, protected reference runs, and cleanup history
 - Resumable 36-state WPT baseline campaigns with readiness and capacity estimates
+- Multi-objective Pareto fronts with weighted trade-off scoring and portable reports
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -199,6 +200,16 @@ from runs rejected by a constraint. The best feasible run is highlighted;
 double-click any ranked row to open its complete job details. Ranking CSV files
 contain the objective, evaluated constraint values, and input state without local
 artifact paths. See [`docs/RESULT_RANKING.md`](docs/RESULT_RANKING.md).
+
+Choose **Pareto analysis** from **Rank results** when a design must balance two or
+more outputs. Each objective can be maximized or minimized and assigned a positive
+weight. Pareto front membership is determined only by dominance; weights order
+the trade-off candidates using a normalized compromise score without changing
+which runs are non-dominated. The analysis can reuse the unit-aware feasibility
+constraints configured in the ranking workspace, excludes scientifically rejected
+results, explains which jobs dominate each design, and exports CSV or portable
+HTML reports. Selected designs can be pinned directly from the results. See
+[`docs/PARETO_ANALYSIS.md`](docs/PARETO_ANALYSIS.md).
 
 Every completed run also receives a separate scientific-validation state:
 **Valid**, **Warning**, or **Rejected**. Validation can enforce required outputs,
@@ -385,9 +396,8 @@ interfaces or deployment options:
 
 1. Run the prepared baseline campaign with the local production IBC model and
    review its accepted result set.
-2. Add Pareto-front analysis for coupling, resistance, and leakage trade-offs.
-3. Add robust grouped objectives across misalignment states.
-4. Validate selected designs against a higher-fidelity volume reference model.
+2. Add robust grouped objectives across misalignment states.
+3. Validate selected designs against a higher-fidelity volume reference model.
 
 Production and reference MPH files remain local and are never committed to this
 repository.
@@ -404,6 +414,7 @@ src/simulation_assistant/
 |-- model_contract.py # Versioned model interface and compatibility checks
 |-- manifest.py     # JSON validation and sweep expansion
 |-- notifications.py
+|-- pareto.py       # Multi-objective dominance, trade-off scores, and reports
 |-- plot_artifacts.py # Safe plot lookup and native preview helpers
 |-- profiles.py     # Local workspace profiles and sanitized template export
 |-- quantities.py   # Unit parsing, dimensions, and SI normalization

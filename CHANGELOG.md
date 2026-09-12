@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.23.0] - 2026-09-12
+
+### Added
+
+- Native multi-objective Pareto analysis for completed simulation batches
+- Two to six simultaneous maximize or minimize objectives
+- Non-dominated front assignment and per-run dominance explanations
+- Weighted normalized compromise scores for ordering trade-off candidates
+- Two-objective trade-off chart with highlighted Pareto-optimal runs
+- Reuse of unit-aware feasibility constraints from the ranking workspace
+- CSV and self-contained HTML Pareto reports
+- Pin and unpin controls for preserving selected design artifacts
+
+### Changed
+
+- Scientifically rejected or incomplete results are excluded from Pareto fronts
+- Package version increased to 0.23.0
+
 ## [0.22.0] - 2026-09-11
 
 ### Added

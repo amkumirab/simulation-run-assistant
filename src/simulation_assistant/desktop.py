@@ -29,6 +29,13 @@ from simulation_assistant.formulas import (
     validate_output_formulas,
 )
 from simulation_assistant.notifications import notifier_from_environment
+from simulation_assistant.pareto import (
+    ParetoObjective,
+    ParetoResult,
+    analyze_pareto,
+    write_pareto_csv,
+    write_pareto_html,
+)
 from simulation_assistant.model_contract import (
     load_model_contract,
     validate_contract_parameters,
@@ -1794,10 +1801,16 @@ class DesktopApp:
         ).grid(row=0, column=1, sticky="e")
         ttk.Button(
             result_header,
+            text="Pareto analysis",
+            style="Secondary.TButton",
+            command=self._open_pareto_analysis,
+        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+        ttk.Button(
+            result_header,
             text="Apply ranking",
             style="Primary.TButton",
             command=lambda: self._calculate_ranking(show_errors=True),
-        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+        ).grid(row=0, column=3, sticky="e", padx=(8, 0))
 
         self.ranking_tree = ttk.Treeview(
             results,
@@ -4214,6 +4227,490 @@ class DesktopApp:
         selection = self.ranking_tree.selection()
         if selection:
             self._show_job(self.store.get(int(selection[0])))
+
+    def _open_pareto_analysis(self) -> None:
+        successful_jobs = self.store.list(status=JobStatus.SUCCEEDED, limit=500)
+        batches = list(dict.fromkeys(job.batch_name for job in successful_jobs))
+        if not batches:
+            messagebox.showinfo(
+                "Pareto analysis",
+                "No successful runs are available for multi-objective analysis.",
+                parent=self.root,
+            )
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Multi-objective Pareto analysis")
+        window.geometry("1120x760")
+        window.minsize(920, 620)
+        window.transient(self.root)
+        container = ttk.Frame(window, style="Card.TFrame", padding=18)
+        container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(4, weight=1)
+
+        ttk.Label(
+            container,
+            text="Multi-objective Pareto analysis",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            container,
+            text=(
+                "Find non-dominated simulation states, inspect engineering trade-offs, "
+                "and rank the Pareto front with an optional weighted compromise score."
+            ),
+            style="CardText.TLabel",
+            wraplength=1040,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        batch_var = tk.StringVar(
+            value=(
+                self.ranking_batch_var.get()
+                if self.ranking_batch_var.get() in batches
+                else batches[0]
+            )
+        )
+        use_constraints_var = tk.BooleanVar(value=True)
+        selectors = ttk.Frame(container, style="Card.TFrame")
+        selectors.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        selectors.grid_columnconfigure(1, weight=1)
+        ttk.Label(selectors, text="Batch", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 8)
+        )
+        batch_combo = ttk.Combobox(
+            selectors,
+            textvariable=batch_var,
+            values=batches,
+            state="readonly",
+            width=28,
+        )
+        batch_combo.grid(row=0, column=1, sticky="ew", padx=(0, 16))
+        ttk.Checkbutton(
+            selectors,
+            text="Use constraints configured in Rank results",
+            variable=use_constraints_var,
+        ).grid(row=0, column=2, sticky="e")
+
+        objective_frame = ttk.Frame(container, style="Card.TFrame")
+        objective_frame.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        objective_frame.grid_columnconfigure(1, weight=1)
+        ttk.Label(objective_frame, text="OBJECTIVE", style="Field.TLabel").grid(
+            row=0, column=1, sticky="w"
+        )
+        ttk.Label(objective_frame, text="DIRECTION", style="Field.TLabel").grid(
+            row=0, column=2, sticky="w", padx=(8, 0)
+        )
+        ttk.Label(objective_frame, text="WEIGHT", style="Field.TLabel").grid(
+            row=0, column=3, sticky="w", padx=(8, 0)
+        )
+        objective_rows: list[
+            tuple[tk.StringVar, tk.StringVar, tk.StringVar, ttk.Combobox]
+        ] = []
+        for index in range(4):
+            metric_var = tk.StringVar()
+            direction_var = tk.StringVar(value="Maximize")
+            weight_var = tk.StringVar(value="1")
+            ttk.Label(
+                objective_frame,
+                text=f"{index + 1}",
+                style="CardText.TLabel",
+            ).grid(row=index + 1, column=0, sticky="w", padx=(0, 8), pady=(5, 0))
+            metric_combo = ttk.Combobox(
+                objective_frame,
+                textvariable=metric_var,
+                state="readonly",
+                width=38,
+            )
+            metric_combo.grid(
+                row=index + 1,
+                column=1,
+                sticky="ew",
+                pady=(5, 0),
+            )
+            metric_combo.bind(
+                "<<ComboboxSelected>>",
+                lambda _event, metric=metric_var, direction=direction_var: (
+                    direction.set(default_direction(metric.get()))
+                    if metric.get()
+                    else None
+                ),
+            )
+            ttk.Combobox(
+                objective_frame,
+                textvariable=direction_var,
+                values=("Maximize", "Minimize"),
+                state="readonly",
+                width=11,
+            ).grid(row=index + 1, column=2, padx=(8, 0), pady=(5, 0))
+            ttk.Entry(
+                objective_frame,
+                textvariable=weight_var,
+                width=9,
+            ).grid(row=index + 1, column=3, padx=(8, 0), pady=(5, 0))
+            objective_rows.append(
+                (metric_var, direction_var, weight_var, metric_combo)
+            )
+
+        result_area = ttk.Panedwindow(container, orient="vertical")
+        result_area.grid(row=4, column=0, sticky="nsew")
+        chart_frame = ttk.Frame(result_area, style="Card.TFrame")
+        table_frame = ttk.Frame(result_area, style="Card.TFrame")
+        result_area.add(chart_frame, weight=2)
+        result_area.add(table_frame, weight=3)
+        chart = tk.Canvas(
+            chart_frame,
+            height=250,
+            background=COLORS["soft"],
+            highlightthickness=1,
+            highlightbackground=COLORS["line"],
+        )
+        chart.pack(fill="both", expand=True)
+        table_frame.grid_columnconfigure(0, weight=1)
+        table_frame.grid_rowconfigure(0, weight=1)
+        tree = ttk.Treeview(
+            table_frame,
+            columns=("front", "job", "score", "objectives", "dominated", "inputs"),
+            show="headings",
+            height=10,
+        )
+        for name, label, width in (
+            ("front", "FRONT", 65),
+            ("job", "JOB", 70),
+            ("score", "COMPROMISE", 105),
+            ("objectives", "OBJECTIVE VALUES", 330),
+            ("dominated", "DOMINATED BY", 150),
+            ("inputs", "INPUT STATE", 300),
+        ):
+            tree.heading(name, text=label)
+            tree.column(
+                name,
+                width=width,
+                stretch=name in {"objectives", "inputs"},
+            )
+        tree.grid(row=0, column=0, sticky="nsew")
+        tree_scrollbar = ttk.Scrollbar(
+            table_frame, orient="vertical", command=tree.yview
+        )
+        tree.configure(yscrollcommand=tree_scrollbar.set)
+        tree_scrollbar.grid(row=0, column=1, sticky="ns")
+        tree.tag_configure("pareto", background=COLORS["teal_soft"])
+        tree.bind(
+            "<Double-1>",
+            lambda _event: self._show_job(self.store.get(int(tree.selection()[0])))
+            if tree.selection()
+            else None,
+        )
+
+        summary_var = tk.StringVar(value="Choose at least two objectives.")
+        current_result: ParetoResult | None = None
+
+        def batch_jobs() -> list[Job]:
+            selected = batch_var.get()
+            return [job for job in successful_jobs if job.batch_name == selected]
+
+        def available_metrics() -> list[str]:
+            return sorted(
+                {
+                    str(name)
+                    for job in batch_jobs()
+                    for name, value in (
+                        (job.result or {}).get("metrics", {}).items()
+                        if isinstance(job.result, dict)
+                        and isinstance(job.result.get("metrics", {}), dict)
+                        else ()
+                    )
+                    if isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                }
+            )
+
+        def preferred_metrics(metrics: list[str]) -> list[str]:
+            priority = (
+                "coupling",
+                "k",
+                "mutual_inductance",
+                "Mavg",
+                "resistance",
+                "B_leak_max",
+            )
+            selected: list[str] = []
+            folded = {name.casefold(): name for name in metrics}
+            for preferred in priority:
+                exact = folded.get(preferred.casefold())
+                if exact and exact not in selected:
+                    selected.append(exact)
+            selected.extend(name for name in metrics if name not in selected)
+            return selected
+
+        def default_direction(metric: str) -> str:
+            lowered = metric.casefold()
+            minimize_terms = (
+                "resistance",
+                "loss",
+                "leak",
+                "error",
+                "duration",
+                "time",
+                "temperature",
+                "mohm",
+            )
+            return "Minimize" if any(term in lowered for term in minimize_terms) else "Maximize"
+
+        def refresh_metric_options(_event: tk.Event | None = None) -> None:
+            metrics = preferred_metrics(available_metrics())
+            for index, (metric_var, direction_var, _weight_var, widget) in enumerate(
+                objective_rows
+            ):
+                widget.configure(values=["", *metrics])
+                if metric_var.get() not in metrics:
+                    metric_var.set(metrics[index] if index < min(2, len(metrics)) else "")
+                if metric_var.get():
+                    direction_var.set(default_direction(metric_var.get()))
+            calculate(show_errors=False)
+
+        def collect_objectives() -> list[ParetoObjective]:
+            objectives: list[ParetoObjective] = []
+            for metric_var, direction_var, weight_var, _widget in objective_rows:
+                metric = metric_var.get().strip()
+                weight_text = weight_var.get().strip()
+                if not metric:
+                    continue
+                try:
+                    weight = float(weight_text)
+                except ValueError as exc:
+                    raise ValueError(f"Weight for {metric} must be numeric") from exc
+                objectives.append(
+                    ParetoObjective(
+                        metric,
+                        direction_var.get().casefold(),
+                        weight,
+                    )
+                )
+            return objectives
+
+        def collect_constraints() -> list[RankingConstraint]:
+            if not use_constraints_var.get():
+                return []
+            if batch_var.get() != self.ranking_batch_var.get():
+                raise ValueError(
+                    "Select the same batch in Rank results or disable shared constraints"
+                )
+            return self._collect_ranking_constraints()
+
+        def draw_chart() -> None:
+            chart.delete("all")
+            width = max(chart.winfo_width(), 640)
+            height = max(chart.winfo_height(), 240)
+            left, right, top, bottom = 70, width - 30, 24, height - 48
+            chart.create_line(left, bottom, right, bottom, fill=COLORS["muted"])
+            chart.create_line(left, bottom, left, top, fill=COLORS["muted"])
+            if current_result is None or not current_result.rows:
+                chart.create_text(
+                    width / 2,
+                    height / 2,
+                    text="No eligible results to plot",
+                    fill=COLORS["muted"],
+                    font=("Segoe UI", 10),
+                )
+                return
+            x_name = current_result.objectives[0].metric
+            y_name = current_result.objectives[1].metric
+            x_values = [row.objective_values[x_name] for row in current_result.rows]
+            y_values = [row.objective_values[y_name] for row in current_result.rows]
+            x_min, x_max = min(x_values), max(x_values)
+            y_min, y_max = min(y_values), max(y_values)
+
+            def position(
+                value: float,
+                minimum: float,
+                maximum: float,
+                start: float,
+                end: float,
+            ) -> float:
+                if maximum == minimum:
+                    return (start + end) / 2
+                return start + ((value - minimum) / (maximum - minimum)) * (end - start)
+
+            chart.create_text(
+                (left + right) / 2,
+                height - 14,
+                text=x_name,
+                fill=COLORS["ink"],
+                font=("Segoe UI Semibold", 9),
+            )
+            chart.create_text(
+                16,
+                (top + bottom) / 2,
+                text=y_name,
+                angle=90,
+                fill=COLORS["ink"],
+                font=("Segoe UI Semibold", 9),
+            )
+            for row in reversed(current_result.rows):
+                x = position(row.objective_values[x_name], x_min, x_max, left, right)
+                y = position(row.objective_values[y_name], y_min, y_max, bottom, top)
+                pareto = row.front == 1
+                radius = 6 if pareto else 4
+                color = COLORS["teal"] if pareto else "#8797a1"
+                chart.create_oval(
+                    x - radius,
+                    y - radius,
+                    x + radius,
+                    y + radius,
+                    fill=color,
+                    outline="white",
+                )
+                if pareto:
+                    chart.create_text(
+                        x + 9,
+                        y - 8,
+                        text=f"#{row.job_id}",
+                        anchor="w",
+                        fill=COLORS["teal"],
+                        font=("Segoe UI Semibold", 8),
+                    )
+
+        def calculate(*, show_errors: bool) -> ParetoResult | None:
+            nonlocal current_result
+            try:
+                objectives = collect_objectives()
+                constraints = collect_constraints()
+                current_result = analyze_pareto(
+                    successful_jobs,
+                    objectives,
+                    constraints=constraints,
+                    batch_name=batch_var.get(),
+                )
+            except ValueError as exc:
+                current_result = None
+                tree.delete(*tree.get_children())
+                summary_var.set(str(exc))
+                draw_chart()
+                if show_errors:
+                    messagebox.showerror("Pareto analysis", str(exc), parent=window)
+                return None
+            tree.delete(*tree.get_children())
+            for row in current_result.rows:
+                objective_text = ", ".join(
+                    f"{name}={self._format_number(value)}"
+                    for name, value in row.objective_values.items()
+                )
+                dominated_text = (
+                    ", ".join(f"#{job_id}" for job_id in row.dominated_by)
+                    if row.dominated_by
+                    else "Non-dominated"
+                )
+                input_text = ", ".join(
+                    f"{name}={value}" for name, value in row.parameters.items()
+                )
+                tree.insert(
+                    "",
+                    "end",
+                    iid=str(row.job_id),
+                    values=(
+                        row.front,
+                        f"#{row.job_id}",
+                        f"{row.compromise_score:.3f}",
+                        objective_text,
+                        dominated_text,
+                        input_text,
+                    ),
+                    tags=("pareto",) if row.front == 1 else (),
+                )
+            summary_var.set(
+                f"{len(current_result.pareto_front)} Pareto-optimal · "
+                f"{current_result.eligible_jobs} eligible · "
+                f"{current_result.constraint_rejected_jobs} constraint rejected · "
+                f"{current_result.validation_rejected_jobs} validation rejected · "
+                f"{current_result.unvalidated_jobs} unvalidated · "
+                f"{current_result.missing_values} missing"
+            )
+            draw_chart()
+            return current_result
+
+        def pin_selected() -> None:
+            selection = tree.selection()
+            if len(selection) != 1:
+                messagebox.showinfo(
+                    "Pareto analysis",
+                    "Select one result to pin or unpin.",
+                    parent=window,
+                )
+                return
+            job_id = int(selection[0])
+            job = self.store.get(job_id)
+            self.store.set_pinned(job_id, not job.pinned)
+            messagebox.showinfo(
+                "Pareto analysis",
+                f"Job #{job_id} is now {'pinned' if not job.pinned else 'unpinned'}.",
+                parent=window,
+            )
+
+        def export(extension: str) -> None:
+            result = calculate(show_errors=True)
+            if result is None or not result.rows:
+                return
+            safe_batch = re.sub(r"[^A-Za-z0-9_.-]+", "-", batch_var.get()).strip("-")
+            destination = filedialog.asksaveasfilename(
+                parent=window,
+                title="Export Pareto analysis",
+                initialfile=f"{safe_batch or 'batch'}-pareto{extension}",
+                defaultextension=extension,
+                filetypes=[
+                    ("CSV file", "*.csv")
+                    if extension == ".csv"
+                    else ("HTML report", "*.html")
+                ],
+            )
+            if not destination:
+                return
+            try:
+                output = (
+                    write_pareto_csv(destination, result)
+                    if extension == ".csv"
+                    else write_pareto_html(destination, result)
+                )
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Export Pareto analysis", str(exc), parent=window)
+                return
+            self.activity_var.set(f"Pareto analysis exported to {output.name}.")
+
+        footer = ttk.Frame(container, style="Card.TFrame")
+        footer.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        footer.grid_columnconfigure(0, weight=1)
+        ttk.Label(footer, textvariable=summary_var, style="CardText.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        actions = ttk.Frame(footer, style="Card.TFrame")
+        actions.grid(row=0, column=1, sticky="e")
+        ttk.Button(
+            actions,
+            text="Pin / unpin",
+            style="Secondary.TButton",
+            command=pin_selected,
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="Export CSV",
+            style="Secondary.TButton",
+            command=lambda: export(".csv"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Export HTML",
+            style="Secondary.TButton",
+            command=lambda: export(".html"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Analyze",
+            style="Primary.TButton",
+            command=lambda: calculate(show_errors=True),
+        ).pack(side="left", padx=(8, 0))
+        batch_combo.bind("<<ComboboxSelected>>", refresh_metric_options)
+        chart.bind("<Configure>", lambda _event: draw_chart())
+        refresh_metric_options()
 
     def _export_ranking(self) -> None:
         self._calculate_ranking(show_errors=True)
