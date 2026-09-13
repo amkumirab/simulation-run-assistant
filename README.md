@@ -47,6 +47,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Dry-run artifact retention with pinning, protected reference runs, and cleanup history
 - Resumable 36-state WPT baseline campaigns with readiness and capacity estimates
 - Multi-objective Pareto fronts with weighted trade-off scoring and portable reports
+- Robust misalignment grouping with coverage gates, worst-case ranking, and heatmaps
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -210,6 +211,13 @@ constraints configured in the ranking workspace, excludes scientifically rejecte
 results, explains which jobs dominate each design, and exports CSV or portable
 HTML reports. Selected designs can be pinned directly from the results. See
 [`docs/PARETO_ANALYSIS.md`](docs/PARETO_ANALYSIS.md).
+
+Choose **Robust analysis** from **Rank results** to compare fixed designs over a
+complete set of `xoff`, `yoff`, and `tilt` conditions. The workspace reports
+coverage, worst-case and average performance, change from the aligned state, and
+an offset/tilt heatmap. Incomplete, unvalidated, or scientifically rejected design
+groups remain visible for diagnosis but cannot receive a rank. See
+[`docs/ROBUST_MISALIGNMENT.md`](docs/ROBUST_MISALIGNMENT.md).
 
 Every completed run also receives a separate scientific-validation state:
 **Valid**, **Warning**, or **Rejected**. Validation can enforce required outputs,
@@ -396,7 +404,8 @@ interfaces or deployment options:
 
 1. Run the prepared baseline campaign with the local production IBC model and
    review its accepted result set.
-2. Add robust grouped objectives across misalignment states.
+2. Run robust grouped analysis across the accepted misalignment states and preserve
+   the strongest complete design groups.
 3. Validate selected designs against a higher-fidelity volume reference model.
 
 Production and reference MPH files remain local and are never committed to this
@@ -420,6 +429,7 @@ src/simulation_assistant/
 |-- quantities.py   # Unit parsing, dimensions, and SI normalization
 |-- ranking.py      # Constrained objective ranking and CSV export
 |-- retention.py    # Safe artifact inventory, retention plans, and cleanup
+|-- robustness.py   # Grouped misalignment metrics, coverage, fronts, and reports
 |-- result_pipeline.py # COMSOL output lineage and freshness inspection
 |-- telegram_api.py # Minimal Telegram Bot API client
 |-- telegram_bot.py # Authorized long-polling command bot

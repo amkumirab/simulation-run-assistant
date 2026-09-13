@@ -73,6 +73,15 @@ from simulation_assistant.ranking import (
     rank_sweep_results,
     write_ranking_csv,
 )
+from simulation_assistant.robustness import (
+    RobustDesign,
+    RobustObjective,
+    RobustResult,
+    analyze_robust_designs,
+    heatmap_values,
+    write_robust_csv,
+    write_robust_html,
+)
 from simulation_assistant.retention import (
     RetentionPolicy,
     StoragePlan,
@@ -1807,10 +1816,16 @@ class DesktopApp:
         ).grid(row=0, column=2, sticky="e", padx=(8, 0))
         ttk.Button(
             result_header,
+            text="Robust analysis",
+            style="Secondary.TButton",
+            command=self._open_robust_analysis,
+        ).grid(row=0, column=3, sticky="e", padx=(8, 0))
+        ttk.Button(
+            result_header,
             text="Apply ranking",
             style="Primary.TButton",
             command=lambda: self._calculate_ranking(show_errors=True),
-        ).grid(row=0, column=3, sticky="e", padx=(8, 0))
+        ).grid(row=0, column=4, sticky="e", padx=(8, 0))
 
         self.ranking_tree = ttk.Treeview(
             results,
@@ -4227,6 +4242,362 @@ class DesktopApp:
         selection = self.ranking_tree.selection()
         if selection:
             self._show_job(self.store.get(int(selection[0])))
+
+    def _open_robust_analysis(self) -> None:
+        analysis_jobs = self.store.list(limit=5000)
+        batches = sorted({job.batch_name for job in analysis_jobs})
+        if not batches:
+            messagebox.showinfo(
+                "Robust analysis",
+                "No successful simulation batches are available.",
+                parent=self.root,
+            )
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Robust misalignment analysis")
+        window.geometry("1180x760")
+        window.minsize(940, 640)
+        window.transient(self.root)
+        container = ttk.Frame(window, style="Card.TFrame", padding=18)
+        container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(4, weight=1)
+
+        ttk.Label(
+            container,
+            text="Robust misalignment analysis",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            container,
+            text=(
+                "Compare complete designs across offset and tilt states. Incomplete, "
+                "unvalidated, and scientifically rejected groups remain visible but "
+                "cannot enter the robust ranking."
+            ),
+            style="CardText.TLabel",
+            wraplength=1080,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        controls = ttk.Frame(container, style="Card.TFrame")
+        controls.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        controls.grid_columnconfigure(1, weight=1)
+        controls.grid_columnconfigure(3, weight=1)
+        batch_var = tk.StringVar(
+            value=self.ranking_batch_var.get()
+            if self.ranking_batch_var.get() in batches
+            else batches[0]
+        )
+        condition_var = tk.StringVar(value="xoff, yoff, tilt")
+        metric_var = tk.StringVar()
+        direction_var = tk.StringVar(value="Maximize")
+        mode_var = tk.StringVar(value="Balanced")
+
+        ttk.Label(controls, text="BATCH", style="Field.TLabel").grid(row=0, column=0, sticky="w")
+        batch_combo = ttk.Combobox(
+            controls, textvariable=batch_var, values=batches, state="readonly", width=24
+        )
+        batch_combo.grid(row=0, column=1, sticky="ew", padx=(8, 16))
+        ttk.Label(controls, text="CONDITION FIELDS", style="Field.TLabel").grid(row=0, column=2, sticky="w")
+        ttk.Entry(controls, textvariable=condition_var).grid(row=0, column=3, sticky="ew", padx=(8, 16))
+        ttk.Label(controls, text="METRIC", style="Field.TLabel").grid(row=0, column=4, sticky="w")
+        metric_combo = ttk.Combobox(controls, textvariable=metric_var, state="readonly", width=22)
+        metric_combo.grid(row=0, column=5, sticky="ew", padx=(8, 0))
+        ttk.Label(controls, text="DIRECTION", style="Field.TLabel").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        ttk.Combobox(
+            controls,
+            textvariable=direction_var,
+            values=("Maximize", "Minimize"),
+            state="readonly",
+            width=13,
+        ).grid(row=1, column=1, sticky="w", padx=(8, 16), pady=(10, 0))
+        ttk.Label(controls, text="RANK BY", style="Field.TLabel").grid(row=1, column=2, sticky="w", pady=(10, 0))
+        ttk.Combobox(
+            controls,
+            textvariable=mode_var,
+            values=("Balanced", "Worst case", "Average"),
+            state="readonly",
+            width=16,
+        ).grid(row=1, column=3, sticky="w", padx=(8, 16), pady=(10, 0))
+
+        summary_var = tk.StringVar(value="Choose a batch and metric.")
+        ttk.Label(container, textvariable=summary_var, style="CardText.TLabel").grid(
+            row=3, column=0, sticky="w", pady=(0, 8)
+        )
+
+        result_area = ttk.Panedwindow(container, orient="horizontal")
+        result_area.grid(row=4, column=0, sticky="nsew")
+        table_frame = ttk.Frame(result_area, style="Card.TFrame")
+        chart_frame = ttk.Frame(result_area, style="Card.TFrame", padding=(12, 0, 0, 0))
+        result_area.add(table_frame, weight=3)
+        result_area.add(chart_frame, weight=2)
+        table_frame.grid_columnconfigure(0, weight=1)
+        table_frame.grid_rowconfigure(0, weight=1)
+        tree = ttk.Treeview(
+            table_frame,
+            columns=("rank", "score", "coverage", "status", "worst", "mean", "change", "design"),
+            show="headings",
+            height=14,
+        )
+        for name, label, width in (
+            ("rank", "RANK", 55),
+            ("score", "SCORE", 70),
+            ("coverage", "COVERAGE", 85),
+            ("status", "STATUS", 145),
+            ("worst", "WORST", 85),
+            ("mean", "MEAN", 85),
+            ("change", "CHANGE", 85),
+            ("design", "FIXED DESIGN INPUTS", 300),
+        ):
+            tree.heading(name, text=label)
+            tree.column(name, width=width, stretch=name in {"status", "design"})
+        tree.grid(row=0, column=0, sticky="nsew")
+        table_scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=table_scrollbar.set)
+        table_scrollbar.grid(row=0, column=1, sticky="ns")
+        tree.tag_configure("best", background=COLORS["teal_soft"])
+        tree.tag_configure("excluded", foreground=COLORS["muted"])
+
+        ttk.Label(chart_frame, text="Offset / tilt response", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            chart_frame,
+            text="Select a design to inspect its metric over xoff and tilt.",
+            style="CardText.TLabel",
+            wraplength=390,
+        ).pack(anchor="w", pady=(3, 8))
+        heatmap = tk.Canvas(
+            chart_frame,
+            width=400,
+            height=390,
+            background=COLORS["soft"],
+            highlightthickness=1,
+            highlightbackground=COLORS["line"],
+        )
+        heatmap.pack(fill="both", expand=True)
+        current_result: RobustResult | None = None
+        group_lookup: dict[str, RobustDesign] = {}
+
+        def batch_jobs() -> list[Job]:
+            return [job for job in analysis_jobs if job.batch_name == batch_var.get()]
+
+        def available_metrics() -> list[str]:
+            return sorted(
+                {
+                    str(name)
+                    for job in batch_jobs()
+                    for name, value in (
+                        (job.result or {}).get("metrics", {}).items()
+                        if isinstance(job.result, dict)
+                        and isinstance(job.result.get("metrics", {}), dict)
+                        else ()
+                    )
+                    if isinstance(value, (int, float)) and not isinstance(value, bool)
+                }
+            )
+
+        def default_direction(metric: str) -> str:
+            lowered = metric.casefold()
+            return "Minimize" if any(
+                term in lowered
+                for term in ("resistance", "loss", "leak", "error", "duration", "time", "temperature")
+            ) else "Maximize"
+
+        def selected_group() -> RobustDesign | None:
+            selection = tree.selection()
+            return group_lookup.get(selection[0]) if selection else None
+
+        def draw_heatmap(_event: tk.Event | None = None) -> None:
+            heatmap.delete("all")
+            group = selected_group()
+            width = max(heatmap.winfo_width(), 380)
+            height = max(heatmap.winfo_height(), 330)
+            if group is None or not group.states or not metric_var.get():
+                heatmap.create_text(
+                    width / 2,
+                    height / 2,
+                    text="Select a design group",
+                    fill=COLORS["muted"],
+                    font=("Segoe UI", 10),
+                )
+                return
+            x_values, y_values, cells = heatmap_values(
+                group,
+                metric_var.get(),
+                direction=direction_var.get().casefold(),
+            )
+            if not x_values or not y_values or not cells:
+                heatmap.create_text(width / 2, height / 2, text="No heatmap values", fill=COLORS["muted"])
+                return
+            values = list(cells.values())
+            minimum, maximum = min(values), max(values)
+            left, top, right, bottom = 75, 38, width - 18, height - 58
+            cell_width = (right - left) / len(x_values)
+            cell_height = (bottom - top) / len(y_values)
+
+            for y_index, y_value in enumerate(y_values):
+                heatmap.create_text(left - 8, top + (y_index + 0.5) * cell_height, text=str(y_value), anchor="e", fill=COLORS["ink"])
+                for x_index, x_value in enumerate(x_values):
+                    value = cells.get((str(x_value), str(y_value)))
+                    x0 = left + x_index * cell_width
+                    y0 = top + y_index * cell_height
+                    if value is None:
+                        color, label = COLORS["line"], "—"
+                    else:
+                        ratio = 1.0 if maximum == minimum else (value - minimum) / (maximum - minimum)
+                        red = int(231 - 139 * ratio)
+                        green = int(244 - 61 * ratio)
+                        blue = int(248 - 43 * ratio)
+                        color, label = f"#{red:02x}{green:02x}{blue:02x}", self._format_number(value)
+                    heatmap.create_rectangle(x0, y0, x0 + cell_width, y0 + cell_height, fill=color, outline="white")
+                    heatmap.create_text(x0 + cell_width / 2, y0 + cell_height / 2, text=label, fill=COLORS["ink"])
+            for x_index, x_value in enumerate(x_values):
+                heatmap.create_text(left + (x_index + 0.5) * cell_width, bottom + 16, text=str(x_value), fill=COLORS["ink"])
+            heatmap.create_text((left + right) / 2, height - 14, text="xoff", fill=COLORS["ink"], font=("Segoe UI Semibold", 9))
+            heatmap.create_text(14, (top + bottom) / 2, text="tilt", angle=90, fill=COLORS["ink"], font=("Segoe UI Semibold", 9))
+            heatmap.create_text(left, 17, text=f"{metric_var.get()}  min {minimum:g}  max {maximum:g}", anchor="w", fill=COLORS["muted"])
+
+        def calculate(*, show_errors: bool) -> RobustResult | None:
+            nonlocal current_result, group_lookup
+            fields = tuple(field.strip() for field in condition_var.get().split(",") if field.strip())
+            mode = mode_var.get().casefold().replace(" ", "_")
+            try:
+                current_result = analyze_robust_designs(
+                    batch_jobs(),
+                    [RobustObjective(metric_var.get(), direction_var.get().casefold())],
+                    condition_fields=fields,
+                    batch_name=batch_var.get(),
+                    ranking_mode=mode,
+                )
+            except ValueError as exc:
+                current_result = None
+                group_lookup = {}
+                tree.delete(*tree.get_children())
+                summary_var.set(str(exc))
+                draw_heatmap()
+                if show_errors:
+                    messagebox.showerror("Robust analysis", str(exc), parent=window)
+                return None
+            tree.delete(*tree.get_children())
+            group_lookup = {}
+            metric = metric_var.get()
+            for index, group in enumerate(current_result.groups):
+                item_id = f"group-{index}"
+                group_lookup[item_id] = group
+                summary = group.metric_summaries.get(metric)
+                change = summary.worst_case_change_percent if summary else None
+                tree.insert(
+                    "",
+                    "end",
+                    iid=item_id,
+                    values=(
+                        group.rank or "—",
+                        f"{group.score:.3f}" if group.score is not None else "—",
+                        f"{group.covered_states}/{group.expected_states}",
+                        "Eligible" if group.eligible else group.exclusion_reason,
+                        self._format_number(summary.worst) if summary else "—",
+                        self._format_number(summary.mean) if summary else "—",
+                        f"{change:.2f}%" if change is not None else "—",
+                        ", ".join(f"{name}={value}" for name, value in group.design_parameters.items()) or "Shared design",
+                    ),
+                    tags=("best",) if group.rank == 1 else (("excluded",) if not group.eligible else ()),
+                )
+            eligible = len(current_result.ranked_groups)
+            summary_var.set(
+                f"{len(current_result.groups)} design group(s) · {eligible} eligible · "
+                f"{len(current_result.groups) - eligible} excluded · "
+                f"{len(current_result.expected_conditions)} expected condition(s)"
+            )
+            if tree.get_children():
+                tree.selection_set(tree.get_children()[0])
+            draw_heatmap()
+            return current_result
+
+        def refresh_options(_event: tk.Event | None = None) -> None:
+            metrics = available_metrics()
+            metric_combo.configure(values=metrics)
+            if metric_var.get() not in metrics:
+                preferred = next((name for name in metrics if name.casefold() in {"coupling", "k", "mavg"}), None)
+                metric_var.set(preferred or (metrics[0] if metrics else ""))
+            if metric_var.get():
+                direction_var.set(default_direction(metric_var.get()))
+            calculate(show_errors=False)
+
+        def show_group_jobs() -> None:
+            group = selected_group()
+            if group is None:
+                messagebox.showinfo("Robust analysis", "Select one design group.", parent=window)
+                return
+            details = tk.Toplevel(window)
+            details.title("Design group jobs")
+            details.geometry("760x420")
+            details.transient(window)
+            frame = ttk.Frame(details, style="Card.TFrame", padding=16)
+            frame.pack(fill="both", expand=True)
+            ttk.Label(
+                frame,
+                text=", ".join(f"{name}={value}" for name, value in group.design_parameters.items()) or "Shared design",
+                style="CardTitle.TLabel",
+                wraplength=700,
+            ).pack(anchor="w", pady=(0, 10))
+            jobs_tree = ttk.Treeview(frame, columns=("job", "condition", "validation"), show="headings")
+            for name, label, width in (("job", "JOB", 75), ("condition", "CONDITION", 470), ("validation", "VALIDATION", 110)):
+                jobs_tree.heading(name, text=label)
+                jobs_tree.column(name, width=width, stretch=name == "condition")
+            jobs_tree.pack(fill="both", expand=True)
+            for state in group.states:
+                jobs_tree.insert("", "end", iid=str(state.job_id), values=(f"#{state.job_id}", ", ".join(f"{name}={value}" for name, value in state.condition.items()), state.validation_status.title()))
+            jobs_tree.bind("<Double-1>", lambda _event: self._show_job(self.store.get(int(jobs_tree.selection()[0]))) if jobs_tree.selection() else None)
+
+        def pin_group() -> None:
+            group = selected_group()
+            if group is None or not group.job_ids:
+                messagebox.showinfo("Robust analysis", "Select a design group with completed jobs.", parent=window)
+                return
+            jobs = [self.store.get(job_id) for job_id in group.job_ids]
+            target = not all(job.pinned for job in jobs)
+            for job in jobs:
+                self.store.set_pinned(job.id, target)
+            self.refresh_jobs()
+            self.activity_var.set(f"{len(jobs)} design-group jobs {'pinned' if target else 'unpinned'}.")
+
+        def export(extension: str) -> None:
+            result = calculate(show_errors=True)
+            if result is None or not result.groups:
+                return
+            safe_batch = re.sub(r"[^A-Za-z0-9_.-]+", "-", batch_var.get()).strip("-")
+            destination = filedialog.asksaveasfilename(
+                parent=window,
+                title="Export robust analysis",
+                initialfile=f"{safe_batch or 'batch'}-robust{extension}",
+                defaultextension=extension,
+                filetypes=[("CSV file", "*.csv") if extension == ".csv" else ("HTML report", "*.html")],
+            )
+            if not destination:
+                return
+            try:
+                output = write_robust_csv(destination, result) if extension == ".csv" else write_robust_html(destination, result)
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Export robust analysis", str(exc), parent=window)
+                return
+            self.activity_var.set(f"Robust analysis exported to {output.name}.")
+
+        footer = ttk.Frame(container, style="Card.TFrame")
+        footer.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        footer.grid_columnconfigure(0, weight=1)
+        actions = ttk.Frame(footer, style="Card.TFrame")
+        actions.grid(row=0, column=1, sticky="e")
+        ttk.Button(actions, text="Group jobs", style="Secondary.TButton", command=show_group_jobs).pack(side="left")
+        ttk.Button(actions, text="Pin / unpin group", style="Secondary.TButton", command=pin_group).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="Export CSV", style="Secondary.TButton", command=lambda: export(".csv")).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="Export HTML", style="Secondary.TButton", command=lambda: export(".html")).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="Analyze", style="Primary.TButton", command=lambda: calculate(show_errors=True)).pack(side="left", padx=(8, 0))
+        batch_combo.bind("<<ComboboxSelected>>", refresh_options)
+        metric_combo.bind("<<ComboboxSelected>>", lambda _event: (direction_var.set(default_direction(metric_var.get())), calculate(show_errors=False)))
+        tree.bind("<<TreeviewSelect>>", draw_heatmap)
+        tree.bind("<Double-1>", lambda _event: show_group_jobs())
+        heatmap.bind("<Configure>", draw_heatmap)
+        refresh_options()
 
     def _open_pareto_analysis(self) -> None:
         successful_jobs = self.store.list(status=JobStatus.SUCCEEDED, limit=500)

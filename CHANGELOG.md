@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.24.0] - 2026-09-13
+
+### Added
+
+- Robust design grouping across configurable lateral-offset and tilt conditions
+- Worst-case, average, and balanced ranking modes for misalignment performance
+- Coverage gates that keep incomplete and scientifically rejected groups out of ranking
+- Aligned-reference change, group-level Pareto fronts, and normalized robust scores
+- Native offset/tilt heatmap with group job inspection and group pinning
+- CSV and self-contained HTML reports for robust design comparison
+
+### Changed
+
+- Unit-equivalent condition values now resolve to the same robust-analysis state
+- The latest run supersedes older attempts for the same design and condition
+- Package version increased to 0.24.0
+
 ## [0.23.0] - 2026-09-12
 
 ### Added
