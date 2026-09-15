@@ -73,6 +73,14 @@ from simulation_assistant.ranking import (
     rank_sweep_results,
     write_ranking_csv,
 )
+from simulation_assistant.reference_validation import (
+    InputMapping,
+    MetricTolerance,
+    ReferenceValidationResult,
+    compare_reference_models,
+    write_reference_csv,
+    write_reference_html,
+)
 from simulation_assistant.robustness import (
     RobustDesign,
     RobustObjective,
@@ -1822,10 +1830,16 @@ class DesktopApp:
         ).grid(row=0, column=3, sticky="e", padx=(8, 0))
         ttk.Button(
             result_header,
+            text="Reference validation",
+            style="Secondary.TButton",
+            command=self._open_reference_validation,
+        ).grid(row=0, column=4, sticky="e", padx=(8, 0))
+        ttk.Button(
+            result_header,
             text="Apply ranking",
             style="Primary.TButton",
             command=lambda: self._calculate_ranking(show_errors=True),
-        ).grid(row=0, column=4, sticky="e", padx=(8, 0))
+        ).grid(row=0, column=5, sticky="e", padx=(8, 0))
 
         self.ranking_tree = ttk.Treeview(
             results,
@@ -4242,6 +4256,401 @@ class DesktopApp:
         selection = self.ranking_tree.selection()
         if selection:
             self._show_job(self.store.get(int(selection[0])))
+
+    def _open_reference_validation(self) -> None:
+        jobs = self.store.list(limit=5000)
+        batches = sorted({job.batch_name for job in jobs})
+        if len(batches) < 2:
+            messagebox.showinfo(
+                "Reference validation",
+                "At least two batches are required: one primary and one reference batch.",
+                parent=self.root,
+            )
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Reference model validation")
+        window.geometry("1220x790")
+        window.minsize(980, 660)
+        window.transient(self.root)
+        container = ttk.Frame(window, style="Card.TFrame", padding=18)
+        container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(5, weight=1)
+
+        ttk.Label(
+            container,
+            text="Reference model validation",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            container,
+            text=(
+                "Pair equivalent states from a fast model and a higher-fidelity "
+                "reference batch, then verify mapped outputs against explicit tolerances."
+            ),
+            style="CardText.TLabel",
+            wraplength=1140,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        primary_var = tk.StringVar(value=batches[0])
+        reference_var = tk.StringVar(value=batches[1])
+        pinned_only_var = tk.BooleanVar(value=False)
+        input_mapping_var = tk.StringVar()
+        selectors = ttk.Frame(container, style="Card.TFrame")
+        selectors.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        selectors.grid_columnconfigure(1, weight=1)
+        selectors.grid_columnconfigure(3, weight=1)
+        ttk.Label(selectors, text="PRIMARY BATCH", style="Field.TLabel").grid(row=0, column=0, sticky="w")
+        primary_combo = ttk.Combobox(
+            selectors,
+            textvariable=primary_var,
+            values=batches,
+            state="readonly",
+            width=25,
+        )
+        primary_combo.grid(row=0, column=1, sticky="ew", padx=(8, 16))
+        ttk.Label(selectors, text="REFERENCE BATCH", style="Field.TLabel").grid(row=0, column=2, sticky="w")
+        reference_combo = ttk.Combobox(
+            selectors,
+            textvariable=reference_var,
+            values=batches,
+            state="readonly",
+            width=25,
+        )
+        reference_combo.grid(row=0, column=3, sticky="ew", padx=(8, 16))
+        ttk.Checkbutton(
+            selectors,
+            text="Pinned primary jobs only",
+            variable=pinned_only_var,
+        ).grid(row=0, column=4, sticky="e")
+        ttk.Label(selectors, text="INPUT MAPPINGS", style="Field.TLabel").grid(row=1, column=0, sticky="w", pady=(10, 0))
+        ttk.Entry(selectors, textvariable=input_mapping_var).grid(
+            row=1,
+            column=1,
+            columnspan=4,
+            sticky="ew",
+            padx=(8, 0),
+            pady=(10, 0),
+        )
+        ttk.Label(
+            selectors,
+            text="Use primary=reference pairs separated by commas. Equal names may be written once.",
+            style="CardText.TLabel",
+        ).grid(row=2, column=1, columnspan=4, sticky="w", padx=(8, 0), pady=(3, 0))
+
+        metric_frame = ttk.Frame(container, style="Card.TFrame")
+        metric_frame.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        metric_frame.grid_columnconfigure(1, weight=1)
+        metric_frame.grid_columnconfigure(2, weight=1)
+        for column, label in enumerate(("", "PRIMARY METRIC", "REFERENCE METRIC", "MAX RELATIVE ERROR %", "MAX ABSOLUTE ERROR")):
+            ttk.Label(metric_frame, text=label, style="Field.TLabel").grid(row=0, column=column, sticky="w", padx=(8 if column else 0, 0))
+        metric_rows: list[
+            tuple[tk.StringVar, tk.StringVar, tk.StringVar, tk.StringVar, ttk.Combobox, ttk.Combobox]
+        ] = []
+        for index in range(3):
+            primary_metric_var = tk.StringVar()
+            reference_metric_var = tk.StringVar()
+            relative_var = tk.StringVar(value="10")
+            absolute_var = tk.StringVar()
+            ttk.Label(metric_frame, text=str(index + 1), style="CardText.TLabel").grid(row=index + 1, column=0, sticky="w", pady=(5, 0))
+            primary_metric_combo = ttk.Combobox(metric_frame, textvariable=primary_metric_var, state="readonly", width=28)
+            primary_metric_combo.grid(row=index + 1, column=1, sticky="ew", padx=(8, 0), pady=(5, 0))
+            reference_metric_combo = ttk.Combobox(metric_frame, textvariable=reference_metric_var, state="readonly", width=28)
+            reference_metric_combo.grid(row=index + 1, column=2, sticky="ew", padx=(8, 0), pady=(5, 0))
+            ttk.Entry(metric_frame, textvariable=relative_var, width=18).grid(row=index + 1, column=3, sticky="ew", padx=(8, 0), pady=(5, 0))
+            ttk.Entry(metric_frame, textvariable=absolute_var, width=18).grid(row=index + 1, column=4, sticky="ew", padx=(8, 0), pady=(5, 0))
+            metric_rows.append((primary_metric_var, reference_metric_var, relative_var, absolute_var, primary_metric_combo, reference_metric_combo))
+
+        summary_var = tk.StringVar(value="Configure input and metric mappings.")
+        ttk.Label(container, textvariable=summary_var, style="CardText.TLabel").grid(row=4, column=0, sticky="w", pady=(0, 8))
+        result_area = ttk.Panedwindow(container, orient="horizontal")
+        result_area.grid(row=5, column=0, sticky="nsew")
+        table_frame = ttk.Frame(result_area, style="Card.TFrame")
+        chart_frame = ttk.Frame(result_area, style="Card.TFrame", padding=(12, 0, 0, 0))
+        result_area.add(table_frame, weight=3)
+        result_area.add(chart_frame, weight=2)
+        table_frame.grid_columnconfigure(0, weight=1)
+        table_frame.grid_rowconfigure(0, weight=1)
+        tree = ttk.Treeview(
+            table_frame,
+            columns=("primary", "reference", "status", "errors", "inputs"),
+            show="headings",
+            height=15,
+        )
+        for name, label, width in (
+            ("primary", "PRIMARY", 80),
+            ("reference", "REFERENCE", 90),
+            ("status", "STATUS", 95),
+            ("errors", "METRIC ERRORS", 290),
+            ("inputs", "MATCHED INPUT STATE", 300),
+        ):
+            tree.heading(name, text=label)
+            tree.column(name, width=width, stretch=name in {"errors", "inputs"})
+        tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        tree.tag_configure("passed", background=COLORS["teal_soft"])
+        tree.tag_configure("warning", background=COLORS["amber_soft"])
+        tree.tag_configure("failed", background=COLORS["red_soft"])
+        tree.tag_configure("ineligible", foreground=COLORS["muted"])
+
+        ttk.Label(chart_frame, text="Primary / reference agreement", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            chart_frame,
+            text="The diagonal represents exact agreement for the first mapped metric.",
+            style="CardText.TLabel",
+            wraplength=390,
+        ).pack(anchor="w", pady=(3, 8))
+        chart = tk.Canvas(
+            chart_frame,
+            width=410,
+            height=390,
+            background=COLORS["soft"],
+            highlightthickness=1,
+            highlightbackground=COLORS["line"],
+        )
+        chart.pack(fill="both", expand=True)
+        current_result: ReferenceValidationResult | None = None
+        pair_lookup: dict[str, Any] = {}
+
+        def selected_jobs(batch: str) -> list[Job]:
+            return [job for job in jobs if job.batch_name == batch]
+
+        def available_parameters(batch: str) -> list[str]:
+            return sorted({str(name) for job in selected_jobs(batch) for name in job.parameters})
+
+        def available_metrics(batch: str) -> list[str]:
+            return sorted(
+                {
+                    str(name)
+                    for job in selected_jobs(batch)
+                    for name, value in (
+                        (job.result or {}).get("metrics", {}).items()
+                        if isinstance(job.result, dict)
+                        and isinstance(job.result.get("metrics", {}), dict)
+                        else ()
+                    )
+                    if isinstance(value, (int, float)) and not isinstance(value, bool)
+                }
+            )
+
+        def parse_input_mappings() -> list[InputMapping]:
+            mappings: list[InputMapping] = []
+            for item in input_mapping_var.get().split(","):
+                text = item.strip()
+                if not text:
+                    continue
+                parts = [part.strip() for part in text.split("=", 1)]
+                mappings.append(InputMapping(parts[0], parts[-1]))
+            return mappings
+
+        def parse_tolerances() -> list[MetricTolerance]:
+            tolerances: list[MetricTolerance] = []
+            for primary_metric, reference_metric, relative, absolute, _primary_combo, _reference_combo in metric_rows:
+                primary_name = primary_metric.get().strip()
+                reference_name = reference_metric.get().strip()
+                if not primary_name and not reference_name:
+                    continue
+                if not primary_name or not reference_name:
+                    raise ValueError("Every metric row requires both metric names")
+                try:
+                    relative_value = float(relative.get()) if relative.get().strip() else None
+                    absolute_value = float(absolute.get()) if absolute.get().strip() else None
+                except ValueError as exc:
+                    raise ValueError("Metric tolerances must be numeric") from exc
+                tolerances.append(MetricTolerance(primary_name, reference_name, relative_value, absolute_value))
+            return tolerances
+
+        def refresh_options(_event: tk.Event | None = None) -> None:
+            primary_parameters = available_parameters(primary_var.get())
+            reference_parameters = available_parameters(reference_var.get())
+            common_parameters = [name for name in primary_parameters if name in reference_parameters]
+            if not input_mapping_var.get().strip() or not parse_input_mappings():
+                preferred = [name for name in ("gap", "xoff", "yoff", "tilt") if name in common_parameters]
+                remaining = [name for name in common_parameters if name not in preferred]
+                input_mapping_var.set(", ".join([*preferred, *remaining]))
+            primary_metrics = available_metrics(primary_var.get())
+            reference_metrics = available_metrics(reference_var.get())
+            for index, (primary_metric, reference_metric, _relative, _absolute, primary_widget, reference_widget) in enumerate(metric_rows):
+                primary_widget.configure(values=["", *primary_metrics])
+                reference_widget.configure(values=["", *reference_metrics])
+                if primary_metric.get() not in primary_metrics:
+                    primary_metric.set(primary_metrics[index] if index < min(1, len(primary_metrics)) else "")
+                if reference_metric.get() not in reference_metrics:
+                    same = primary_metric.get() if primary_metric.get() in reference_metrics else ""
+                    reference_metric.set(same or (reference_metrics[index] if index < min(1, len(reference_metrics)) else ""))
+            calculate(show_errors=False)
+
+        def draw_chart(_event: tk.Event | None = None) -> None:
+            chart.delete("all")
+            width = max(chart.winfo_width(), 390)
+            height = max(chart.winfo_height(), 330)
+            points = [
+                (pair.comparisons[0].reference_value, pair.comparisons[0].primary_value, pair.status, pair.primary_job_id)
+                for pair in (current_result.pairs if current_result else ())
+                if pair.comparisons
+            ]
+            if not points:
+                chart.create_text(width / 2, height / 2, text="No comparable pairs", fill=COLORS["muted"], font=("Segoe UI", 10))
+                return
+            values = [value for point in points for value in point[:2]]
+            minimum, maximum = min(values), max(values)
+            if minimum == maximum:
+                padding = abs(minimum) * 0.1 or 1.0
+                minimum -= padding
+                maximum += padding
+            else:
+                padding = (maximum - minimum) * 0.08
+                minimum -= padding
+                maximum += padding
+            left, right, top, bottom = 62, width - 24, 24, height - 55
+
+            def position(value: float, start: float, end: float) -> float:
+                return start + (value - minimum) / (maximum - minimum) * (end - start)
+
+            chart.create_line(left, bottom, right, top, fill=COLORS["muted"], dash=(5, 4))
+            chart.create_line(left, bottom, right, bottom, fill=COLORS["muted"])
+            chart.create_line(left, bottom, left, top, fill=COLORS["muted"])
+            colors = {"passed": COLORS["teal"], "warning": COLORS["amber"], "failed": COLORS["red"]}
+            for reference_value, primary_value, status, job_id in points:
+                x = position(reference_value, left, right)
+                y = position(primary_value, bottom, top)
+                color = colors.get(status, COLORS["muted"])
+                chart.create_oval(x - 5, y - 5, x + 5, y + 5, fill=color, outline="white")
+                chart.create_text(x + 8, y - 7, text=f"#{job_id}", anchor="w", fill=color, font=("Segoe UI Semibold", 8))
+            metric_label = metric_rows[0][0].get() or "metric"
+            chart.create_text((left + right) / 2, height - 15, text="Reference value", fill=COLORS["ink"], font=("Segoe UI Semibold", 9))
+            chart.create_text(15, (top + bottom) / 2, text="Primary value", angle=90, fill=COLORS["ink"], font=("Segoe UI Semibold", 9))
+            chart.create_text(left, 12, text=metric_label, anchor="w", fill=COLORS["muted"])
+
+        def calculate(*, show_errors: bool) -> ReferenceValidationResult | None:
+            nonlocal current_result, pair_lookup
+            if primary_var.get() == reference_var.get():
+                error = "Primary and reference batches must be different"
+                current_result = None
+                summary_var.set(error)
+                if show_errors:
+                    messagebox.showerror("Reference validation", error, parent=window)
+                return None
+            try:
+                primary_ids = (
+                    [job.id for job in selected_jobs(primary_var.get()) if job.pinned]
+                    if pinned_only_var.get()
+                    else None
+                )
+                current_result = compare_reference_models(
+                    selected_jobs(primary_var.get()),
+                    selected_jobs(reference_var.get()),
+                    parse_input_mappings(),
+                    parse_tolerances(),
+                    primary_batch=primary_var.get(),
+                    reference_batch=reference_var.get(),
+                    primary_job_ids=primary_ids,
+                )
+            except ValueError as exc:
+                current_result = None
+                pair_lookup = {}
+                tree.delete(*tree.get_children())
+                summary_var.set(str(exc))
+                draw_chart()
+                if show_errors:
+                    messagebox.showerror("Reference validation", str(exc), parent=window)
+                return None
+            tree.delete(*tree.get_children())
+            pair_lookup = {}
+            for index, pair in enumerate(current_result.pairs):
+                item_id = f"pair-{index}"
+                pair_lookup[item_id] = pair
+                errors = ", ".join(
+                    f"{item.primary_metric}: "
+                    + (f"{item.relative_error_percent:.3g}%" if item.relative_error_percent is not None else f"abs {item.absolute_error:.3g}")
+                    for item in pair.comparisons
+                ) or pair.message
+                tree.insert(
+                    "",
+                    "end",
+                    iid=item_id,
+                    values=(
+                        f"#{pair.primary_job_id}",
+                        f"#{pair.reference_job_id}",
+                        pair.status.title(),
+                        errors,
+                        ", ".join(f"{name}={value}" for name, value in pair.input_state.items()),
+                    ),
+                    tags=(pair.status if pair.status in {"passed", "warning", "failed"} else "ineligible",),
+                )
+            summary_var.set(
+                f"{len(current_result.pairs)} paired · {current_result.passed_pairs} passed · "
+                f"{current_result.warning_pairs} warning · {current_result.failed_pairs} failed · "
+                f"{current_result.ineligible_pairs} ineligible · "
+                f"{len(current_result.unmatched_primary_job_ids)} unmatched primary · "
+                f"{len(current_result.unmatched_reference_job_ids)} unmatched reference"
+            )
+            draw_chart()
+            return current_result
+
+        def open_selected(side: str) -> None:
+            selection = tree.selection()
+            pair = pair_lookup.get(selection[0]) if selection else None
+            if pair is None:
+                messagebox.showinfo("Reference validation", "Select one paired result.", parent=window)
+                return
+            job_id = pair.primary_job_id if side == "primary" else pair.reference_job_id
+            self._show_job(self.store.get(job_id))
+
+        def save_links() -> None:
+            result = calculate(show_errors=True)
+            if result is None or not result.pairs:
+                return
+            for pair in result.pairs:
+                self.store.save_reference_validation(
+                    pair.primary_job_id,
+                    pair.reference_job_id,
+                    pair.status,
+                    pair.to_dict(),
+                )
+            self.activity_var.set(f"Saved {len(result.pairs)} reference-validation link(s).")
+            messagebox.showinfo("Reference validation", "Validation links were saved to the local workspace.", parent=window)
+
+        def export(extension: str) -> None:
+            result = calculate(show_errors=True)
+            if result is None or not result.pairs:
+                return
+            safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "-", f"{primary_var.get()}-{reference_var.get()}-reference").strip("-")
+            destination = filedialog.asksaveasfilename(
+                parent=window,
+                title="Export reference validation",
+                initialfile=f"{safe_name or 'reference-validation'}{extension}",
+                defaultextension=extension,
+                filetypes=[("CSV file", "*.csv") if extension == ".csv" else ("HTML report", "*.html")],
+            )
+            if not destination:
+                return
+            try:
+                output = write_reference_csv(destination, result) if extension == ".csv" else write_reference_html(destination, result)
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Export reference validation", str(exc), parent=window)
+                return
+            self.activity_var.set(f"Reference validation exported to {output.name}.")
+
+        footer = ttk.Frame(container, style="Card.TFrame")
+        footer.grid(row=6, column=0, sticky="ew", pady=(12, 0))
+        footer.grid_columnconfigure(0, weight=1)
+        actions = ttk.Frame(footer, style="Card.TFrame")
+        actions.grid(row=0, column=1, sticky="e")
+        ttk.Button(actions, text="Open primary", style="Secondary.TButton", command=lambda: open_selected("primary")).pack(side="left")
+        ttk.Button(actions, text="Open reference", style="Secondary.TButton", command=lambda: open_selected("reference")).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="Save links", style="Secondary.TButton", command=save_links).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="Export CSV", style="Secondary.TButton", command=lambda: export(".csv")).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="Export HTML", style="Secondary.TButton", command=lambda: export(".html")).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="Validate", style="Primary.TButton", command=lambda: calculate(show_errors=True)).pack(side="left", padx=(8, 0))
+        primary_combo.bind("<<ComboboxSelected>>", refresh_options)
+        reference_combo.bind("<<ComboboxSelected>>", refresh_options)
+        pinned_only_var.trace_add("write", lambda *_args: calculate(show_errors=False))
+        chart.bind("<Configure>", draw_chart)
+        refresh_options()
 
     def _open_robust_analysis(self) -> None:
         analysis_jobs = self.store.list(limit=5000)

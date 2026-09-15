@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.25.0] - 2026-09-14
+
+### Added
+
+- Reference-model validation between independently completed simulation batches
+- Configurable input and output mappings for models with different parameter names
+- Unit-aware state pairing with latest-attempt selection and unmatched-run reporting
+- Relative and absolute metric tolerances with Passed, Warning, and Failed states
+- Scientific-quality gates for primary and reference results
+- Native agreement chart, paired Job access, CSV export, and portable HTML reports
+- Persistent local links between primary and reference Job records
+
+### Changed
+
+- Reference validation can be limited to pinned primary design candidates
+- Package version increased to 0.25.0
+
 ## [0.24.0] - 2026-09-13
 
 ### Added

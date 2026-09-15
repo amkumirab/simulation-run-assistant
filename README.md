@@ -48,6 +48,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Resumable 36-state WPT baseline campaigns with readiness and capacity estimates
 - Multi-objective Pareto fronts with weighted trade-off scoring and portable reports
 - Robust misalignment grouping with coverage gates, worst-case ranking, and heatmaps
+- Reference-model validation with unit-aware pairing and explicit error tolerances
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -218,6 +219,13 @@ coverage, worst-case and average performance, change from the aligned state, and
 an offset/tilt heatmap. Incomplete, unvalidated, or scientifically rejected design
 groups remain visible for diagnosis but cannot receive a rank. See
 [`docs/ROBUST_MISALIGNMENT.md`](docs/ROBUST_MISALIGNMENT.md).
+
+Choose **Reference validation** from **Rank results** after running selected designs
+with a higher-fidelity model in a separate batch. Map equivalent inputs and outputs,
+set relative or absolute error tolerances, and inspect Passed, Warning, Failed, or
+ineligible pairs. Validation links can be saved locally, and CSV or self-contained
+HTML reports contain no local model paths. See
+[`docs/REFERENCE_MODEL_VALIDATION.md`](docs/REFERENCE_MODEL_VALIDATION.md).
 
 Every completed run also receives a separate scientific-validation state:
 **Valid**, **Warning**, or **Rejected**. Validation can enforce required outputs,
@@ -406,7 +414,8 @@ interfaces or deployment options:
    review its accepted result set.
 2. Run robust grouped analysis across the accepted misalignment states and preserve
    the strongest complete design groups.
-3. Validate selected designs against a higher-fidelity volume reference model.
+3. Use the reference-validation workflow to verify selected designs against a
+   higher-fidelity volume model.
 
 Production and reference MPH files remain local and are never committed to this
 repository.
@@ -428,6 +437,7 @@ src/simulation_assistant/
 |-- profiles.py     # Local workspace profiles and sanitized template export
 |-- quantities.py   # Unit parsing, dimensions, and SI normalization
 |-- ranking.py      # Constrained objective ranking and CSV export
+|-- reference_validation.py # Cross-model pairing, tolerances, and reports
 |-- retention.py    # Safe artifact inventory, retention plans, and cleanup
 |-- robustness.py   # Grouped misalignment metrics, coverage, fronts, and reports
 |-- result_pipeline.py # COMSOL output lineage and freshness inspection

@@ -79,6 +79,34 @@ class StorageMigrationTests(unittest.TestCase):
             self.assertEqual(history[0]["job_id"], job_id)
             self.assertEqual(history[0]["bytes_reclaimed"], 1024)
 
+    def test_saves_and_updates_reference_validation_links(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = JobStore(Path(temp_dir) / "jobs.db")
+            store.initialize()
+            job_ids = store.enqueue_batch(
+                "validation",
+                "mock",
+                [{"gap": 0.1}, {"gap": 0.1}],
+            )
+            first_id = store.save_reference_validation(
+                job_ids[0],
+                job_ids[1],
+                "passed",
+                {"relative_error_percent": 2.5},
+            )
+            second_id = store.save_reference_validation(
+                job_ids[0],
+                job_ids[1],
+                "warning",
+                {"relative_error_percent": 8.5},
+            )
+            records = store.list_reference_validations()
+
+        self.assertEqual(first_id, second_id)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["status"], "warning")
+        self.assertEqual(records[0]["details"]["relative_error_percent"], 8.5)
+
 
 if __name__ == "__main__":
     unittest.main()

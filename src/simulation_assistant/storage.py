@@ -67,6 +67,20 @@ class JobStore:
                     bytes_reclaimed INTEGER NOT NULL,
                     details TEXT NOT NULL DEFAULT '{}'
                 );
+                CREATE TABLE IF NOT EXISTS reference_validations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    primary_job_id INTEGER NOT NULL,
+                    reference_job_id INTEGER NOT NULL,
+                    status TEXT NOT NULL CHECK (
+                        status IN (
+                            'passed', 'warning', 'failed', 'rejected',
+                            'unvalidated', 'unavailable'
+                        )
+                    ),
+                    checked_at TEXT NOT NULL,
+                    details TEXT NOT NULL DEFAULT '{}',
+                    UNIQUE(primary_job_id, reference_job_id)
+                );
                 """
             )
             columns = {
@@ -418,6 +432,82 @@ class JobStore:
             )
             if cursor.rowcount != 1:
                 raise KeyError(f"Job {job_id} was not found")
+
+    def save_reference_validation(
+        self,
+        primary_job_id: int,
+        reference_job_id: int,
+        status: str,
+        details: dict[str, Any],
+    ) -> int:
+        normalized_status = status.strip().casefold()
+        supported = {
+            "passed",
+            "warning",
+            "failed",
+            "rejected",
+            "unvalidated",
+            "unavailable",
+        }
+        if normalized_status not in supported:
+            raise ValueError(f"Unsupported reference validation status: {status}")
+        if primary_job_id == reference_job_id:
+            raise ValueError("Primary and reference jobs must be different")
+        self.get(primary_job_id)
+        self.get(reference_job_id)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO reference_validations(
+                    primary_job_id, reference_job_id, status, checked_at, details
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(primary_job_id, reference_job_id) DO UPDATE SET
+                    status = excluded.status,
+                    checked_at = excluded.checked_at,
+                    details = excluded.details
+                """,
+                (
+                    primary_job_id,
+                    reference_job_id,
+                    normalized_status,
+                    utc_now(),
+                    json.dumps(details, sort_keys=True),
+                ),
+            )
+            row = connection.execute(
+                """
+                SELECT id FROM reference_validations
+                WHERE primary_job_id = ? AND reference_job_id = ?
+                """,
+                (primary_job_id, reference_job_id),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Reference validation link was not saved")
+        return int(row["id"])
+
+    def list_reference_validations(self, limit: int = 100) -> list[dict[str, Any]]:
+        if limit < 1:
+            raise ValueError("Reference validation limit must be positive")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM reference_validations
+                ORDER BY checked_at DESC, id DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "id": int(row["id"]),
+                "primary_job_id": int(row["primary_job_id"]),
+                "reference_job_id": int(row["reference_job_id"]),
+                "status": str(row["status"]),
+                "checked_at": str(row["checked_at"]),
+                "details": json.loads(row["details"] or "{}"),
+            }
+            for row in rows
+        ]
 
     def clear_artifact_dir(self, job_id: int) -> None:
         with self._connect() as connection:
