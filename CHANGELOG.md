@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.26.0] - 2026-09-23
+
+### Added
+
+- Reference validation campaign builder for selected or pinned primary Jobs
+- Configurable primary-to-reference input mapping with preserved model defaults
+- Reference-model contract and Fresh Job Sequence readiness gates
+- Campaign preview with runtime and output-model storage estimates
+- Queue-only and immediate sequential execution from the validation workspace
+- Resumable missing, failed, rejected, and unvalidated reference states
+- Persistent primary/reference links from the moment a reference Job is queued
+- Portable CSV and HTML campaign-plan reports
+
+### Changed
+
+- Reference validation now opens with one existing primary batch so a new reference
+  campaign can be created directly
+- Completed immediate campaigns automatically refresh and persist validation results
+- Package version increased to 0.26.0
+
 ## [0.25.0] - 2026-09-14
 
 ### Added

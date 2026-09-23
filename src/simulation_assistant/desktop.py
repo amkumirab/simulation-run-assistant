@@ -81,6 +81,12 @@ from simulation_assistant.reference_validation import (
     write_reference_csv,
     write_reference_html,
 )
+from simulation_assistant.reference_campaigns import (
+    ReferenceCampaignPlan,
+    build_reference_campaign_plan,
+    write_reference_campaign_csv,
+    write_reference_campaign_html,
+)
 from simulation_assistant.robustness import (
     RobustDesign,
     RobustObjective,
@@ -4260,10 +4266,10 @@ class DesktopApp:
     def _open_reference_validation(self) -> None:
         jobs = self.store.list(limit=5000)
         batches = sorted({job.batch_name for job in jobs})
-        if len(batches) < 2:
+        if not batches:
             messagebox.showinfo(
                 "Reference validation",
-                "At least two batches are required: one primary and one reference batch.",
+                "At least one primary simulation batch is required.",
                 parent=self.root,
             )
             return
@@ -4294,7 +4300,9 @@ class DesktopApp:
         ).grid(row=1, column=0, sticky="w", pady=(4, 12))
 
         primary_var = tk.StringVar(value=batches[0])
-        reference_var = tk.StringVar(value=batches[1])
+        reference_var = tk.StringVar(
+            value=batches[1] if len(batches) > 1 else f"{batches[0]}-reference"
+        )
         pinned_only_var = tk.BooleanVar(value=False)
         input_mapping_var = tk.StringVar()
         selectors = ttk.Frame(container, style="Card.TFrame")
@@ -4315,7 +4323,7 @@ class DesktopApp:
             selectors,
             textvariable=reference_var,
             values=batches,
-            state="readonly",
+            state="normal",
             width=25,
         )
         reference_combo.grid(row=0, column=3, sticky="ew", padx=(8, 16))
@@ -4415,6 +4423,13 @@ class DesktopApp:
         current_result: ReferenceValidationResult | None = None
         pair_lookup: dict[str, Any] = {}
 
+        def reload_jobs() -> None:
+            nonlocal jobs, batches
+            jobs = self.store.list(limit=5000)
+            batches = sorted({job.batch_name for job in jobs})
+            primary_combo.configure(values=batches)
+            reference_combo.configure(values=batches)
+
         def selected_jobs(batch: str) -> list[Job]:
             return [job for job in jobs if job.batch_name == batch]
 
@@ -4466,6 +4481,8 @@ class DesktopApp:
         def refresh_options(_event: tk.Event | None = None) -> None:
             primary_parameters = available_parameters(primary_var.get())
             reference_parameters = available_parameters(reference_var.get())
+            if not reference_parameters and self.connection_report is not None:
+                reference_parameters = sorted(self.parameter_variables)
             common_parameters = [name for name in primary_parameters if name in reference_parameters]
             if not input_mapping_var.get().strip() or not parse_input_mappings():
                 preferred = [name for name in ("gap", "xoff", "yoff", "tilt") if name in common_parameters]
@@ -4635,12 +4652,44 @@ class DesktopApp:
                 return
             self.activity_var.set(f"Reference validation exported to {output.name}.")
 
+        def campaign_updated(batch_name: str) -> None:
+            if not window.winfo_exists():
+                return
+            reference_var.set(batch_name)
+            reload_jobs()
+            refresh_options()
+            result = calculate(show_errors=False)
+            if result is not None:
+                for pair in result.pairs:
+                    self.store.save_reference_validation(
+                        pair.primary_job_id,
+                        pair.reference_job_id,
+                        pair.status,
+                        pair.to_dict(),
+                    )
+
+        def open_campaign_builder() -> None:
+            try:
+                mappings = parse_input_mappings()
+            except ValueError as exc:
+                messagebox.showerror("Reference campaign", str(exc), parent=window)
+                return
+            self._open_reference_campaign_builder(
+                window,
+                primary_batch=primary_var.get(),
+                reference_batch=reference_var.get(),
+                input_mappings=mappings,
+                pinned_only=pinned_only_var.get(),
+                on_updated=campaign_updated,
+            )
+
         footer = ttk.Frame(container, style="Card.TFrame")
         footer.grid(row=6, column=0, sticky="ew", pady=(12, 0))
         footer.grid_columnconfigure(0, weight=1)
         actions = ttk.Frame(footer, style="Card.TFrame")
         actions.grid(row=0, column=1, sticky="e")
-        ttk.Button(actions, text="Open primary", style="Secondary.TButton", command=lambda: open_selected("primary")).pack(side="left")
+        ttk.Button(actions, text="Build campaign", style="Secondary.TButton", command=open_campaign_builder).pack(side="left")
+        ttk.Button(actions, text="Open primary", style="Secondary.TButton", command=lambda: open_selected("primary")).pack(side="left", padx=(8, 0))
         ttk.Button(actions, text="Open reference", style="Secondary.TButton", command=lambda: open_selected("reference")).pack(side="left", padx=(8, 0))
         ttk.Button(actions, text="Save links", style="Secondary.TButton", command=save_links).pack(side="left", padx=(8, 0))
         ttk.Button(actions, text="Export CSV", style="Secondary.TButton", command=lambda: export(".csv")).pack(side="left", padx=(8, 0))
@@ -4651,6 +4700,423 @@ class DesktopApp:
         pinned_only_var.trace_add("write", lambda *_args: calculate(show_errors=False))
         chart.bind("<Configure>", draw_chart)
         refresh_options()
+
+    def _open_reference_campaign_builder(
+        self,
+        parent: tk.Misc,
+        *,
+        primary_batch: str,
+        reference_batch: str,
+        input_mappings: list[InputMapping],
+        pinned_only: bool,
+        on_updated: Callable[[str], None],
+    ) -> None:
+        if not primary_batch:
+            messagebox.showerror(
+                "Reference campaign",
+                "Select a primary batch first.",
+                parent=parent,
+            )
+            return
+        if not reference_batch.strip():
+            messagebox.showerror(
+                "Reference campaign",
+                "Enter a reference batch name first.",
+                parent=parent,
+            )
+            return
+        if reference_batch.strip() == primary_batch:
+            messagebox.showerror(
+                "Reference campaign",
+                "Primary and reference batch names must be different.",
+                parent=parent,
+            )
+            return
+        if not input_mappings:
+            messagebox.showerror(
+                "Reference campaign",
+                "Configure at least one input mapping first.",
+                parent=parent,
+            )
+            return
+
+        window = tk.Toplevel(parent)
+        window.title("Reference validation campaign")
+        window.geometry("1080x680")
+        window.minsize(860, 560)
+        window.transient(parent)
+        container = ttk.Frame(window, style="Card.TFrame", padding=18)
+        container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(4, weight=1)
+
+        ttk.Label(
+            container,
+            text="Reference validation campaign",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            container,
+            text=(
+                "Build only the higher-fidelity states required for selected primary "
+                "Jobs. Existing accepted or active states are never duplicated."
+            ),
+            style="CardText.TLabel",
+            wraplength=1000,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        batch_var = tk.StringVar(value=reference_batch.strip())
+        readiness_var = tk.StringVar(value="Checking the connected reference model...")
+        summary_var = tk.StringVar(value="Campaign preview unavailable.")
+        controls = ttk.Frame(container, style="Card.TFrame")
+        controls.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        controls.grid_columnconfigure(1, weight=1)
+        ttk.Label(controls, text="REFERENCE BATCH", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Entry(controls, textvariable=batch_var).grid(
+            row=0, column=1, sticky="ew", padx=(8, 16)
+        )
+        selection_text = "Pinned accepted Jobs" if pinned_only else "All accepted Jobs"
+        ttk.Label(
+            controls,
+            text=f"Primary: {primary_batch} · Selection: {selection_text}",
+            style="CardText.TLabel",
+        ).grid(row=0, column=2, sticky="e")
+        ttk.Label(
+            container,
+            textvariable=readiness_var,
+            style="CardText.TLabel",
+        ).grid(row=3, column=0, sticky="w", pady=(0, 8))
+
+        table_frame = ttk.Frame(container, style="Card.TFrame")
+        table_frame.grid(row=4, column=0, sticky="nsew")
+        table_frame.grid_columnconfigure(0, weight=1)
+        table_frame.grid_rowconfigure(0, weight=1)
+        tree = ttk.Treeview(
+            table_frame,
+            columns=("state", "primary", "inputs", "status", "reference"),
+            show="headings",
+            height=14,
+        )
+        for name, label, width in (
+            ("state", "STATE", 60),
+            ("primary", "PRIMARY JOB", 90),
+            ("inputs", "REFERENCE INPUTS", 510),
+            ("status", "STATUS", 110),
+            ("reference", "REFERENCE JOB", 105),
+        ):
+            tree.heading(name, text=label)
+            tree.column(name, width=width, stretch=name == "inputs")
+        tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        for state, color in (
+            ("valid", COLORS["teal_soft"]),
+            ("warning", COLORS["teal_soft"]),
+            ("failed", COLORS["red_soft"]),
+            ("rejected", COLORS["red_soft"]),
+            ("unvalidated", COLORS["amber_soft"]),
+            ("queued", COLORS["blue_soft"]),
+            ("running", COLORS["blue_soft"]),
+        ):
+            tree.tag_configure(state, background=color)
+
+        current_config: ComsolConfig | None = None
+        current_plan: ReferenceCampaignPlan | None = None
+
+        def selected_primary_jobs() -> list[Job]:
+            candidates = [
+                job
+                for job in self.store.list(limit=5000)
+                if job.batch_name == primary_batch
+            ]
+            return [job for job in candidates if job.pinned] if pinned_only else candidates
+
+        def build_plan() -> tuple[ComsolConfig, ReferenceCampaignPlan]:
+            config = self._require_connected_config()
+            if config.contract_path is None:
+                raise ValueError("Select and validate a reference-model contract first")
+            if not config.job_tag:
+                raise ValueError("Select a COMSOL Job Sequence instead of a Study")
+            pipeline = (self.connection_report or {}).get("result_pipeline") or {}
+            if pipeline.get("status") != "fresh":
+                raise ValueError(
+                    "The reference Job Sequence must provide a Fresh result pipeline"
+                )
+            label = batch_var.get().strip()
+            if not label:
+                raise ValueError("Reference batch name cannot be empty")
+            if label == primary_batch:
+                raise ValueError("Primary and reference batch names must be different")
+            mapped_targets = {mapping.reference for mapping in input_mappings}
+            swept_defaults = sorted(
+                name
+                for name, mode in self.parameter_modes.items()
+                if mode.get() == "Sweep" and name not in mapped_targets
+            )
+            if swept_defaults:
+                raise ValueError(
+                    "Set unmapped reference inputs to Fixed: "
+                    + ", ".join(swept_defaults)
+                )
+            defaults = {
+                name: variable.get().strip()
+                for name, variable in self.parameter_variables.items()
+                if variable.get().strip()
+            }
+            formulas = self._collect_formulas()
+            context = build_comsol_run_context(
+                config.model_path,
+                study_tag=config.study_tag,
+                job_tag=config.job_tag,
+                plot_tags=config.plot_tags,
+                contract_path=config.contract_path,
+            )
+            initial = build_reference_campaign_plan(
+                selected_primary_jobs(),
+                input_mappings,
+                defaults,
+                output_formulas=formulas,
+                run_context=context,
+                existing_jobs=[],
+            )
+            validate_contract_parameters(
+                load_model_contract(config.contract_path),
+                [state.parameters for state in initial.states],
+            )
+            signatures = [state.signature for state in initial.states]
+            existing = [
+                job
+                for job in self.store.list_by_run_signatures(signatures)
+                if job.batch_name == label
+            ]
+            return config, build_reference_campaign_plan(
+                selected_primary_jobs(),
+                input_mappings,
+                defaults,
+                output_formulas=formulas,
+                run_context=context,
+                existing_jobs=existing,
+            )
+
+        def refresh_campaign(*, show_errors: bool = False) -> ReferenceCampaignPlan | None:
+            nonlocal current_config, current_plan
+            try:
+                current_config, current_plan = build_plan()
+            except (OSError, ValueError) as exc:
+                current_config = None
+                current_plan = None
+                tree.delete(*tree.get_children())
+                readiness_var.set(f"Not ready · {exc}")
+                summary_var.set("Connect a compatible reference model and run Check connection.")
+                if show_errors:
+                    messagebox.showerror("Reference campaign", str(exc), parent=window)
+                return None
+            tree.delete(*tree.get_children())
+            for state in current_plan.states:
+                tree.insert(
+                    "",
+                    "end",
+                    iid=f"state:{state.index}",
+                    values=(
+                        state.index,
+                        f"#{state.primary_job_id}",
+                        ", ".join(
+                            f"{name}={value}"
+                            for name, value in state.parameters.items()
+                        ),
+                        state.status.title(),
+                        f"#{state.reference_job_id}" if state.reference_job_id else "",
+                    ),
+                    tags=(state.status,),
+                )
+            successful = self.store.list(status=JobStatus.SUCCEEDED, limit=20)
+            estimate = estimate_sequential_seconds(len(current_plan.pending), successful)
+            storage = estimate_campaign_storage_bytes(
+                len(current_plan.pending),
+                successful,
+            )
+            estimates: list[str] = []
+            if estimate is not None and current_plan.pending:
+                estimates.append(f"about {self._format_duration(estimate)}")
+            if storage is not None and current_plan.pending:
+                estimates.append(f"about {format_file_size(storage)}")
+            estimate_text = " · " + " · ".join(estimates) if estimates else ""
+            readiness_var.set(
+                "Ready · reference contract accepted · Job Sequence pipeline is Fresh"
+            )
+            summary_var.set(
+                f"{current_plan.completed_count} accepted · "
+                f"{current_plan.active_count} active · "
+                f"{current_plan.failed_count} failed · "
+                f"{current_plan.rejected_count} rejected/unvalidated · "
+                f"{len(current_plan.pending)} to submit · "
+                f"{len(current_plan.excluded_primary_job_ids)} primary excluded"
+                f"{estimate_text}"
+            )
+            return current_plan
+
+        def submit_campaign(*, start: bool) -> None:
+            plan = refresh_campaign(show_errors=True)
+            if plan is None or current_config is None:
+                return
+            if self.busy:
+                messagebox.showinfo(
+                    "Reference campaign",
+                    "Wait for the current background operation to finish.",
+                    parent=window,
+                )
+                return
+            if start and self.store.is_queue_paused():
+                messagebox.showerror(
+                    "Reference campaign",
+                    "Resume the run queue before starting campaign jobs.",
+                    parent=window,
+                )
+                return
+            candidates = plan.candidates_to_enqueue()
+            source_ids = plan.pending_primary_job_ids()
+            if not candidates:
+                messagebox.showinfo(
+                    "Reference campaign",
+                    "Every selected state is accepted or currently scheduled.",
+                    parent=window,
+                )
+                return
+            if not messagebox.askyesno(
+                "Confirm reference campaign",
+                f"{'Run' if start else 'Queue'} {len(candidates)} reference state(s)?\n\n"
+                "Accepted and currently scheduled states will not be duplicated.",
+                parent=window,
+            ):
+                return
+            label = batch_var.get().strip()
+            job_ids = self.store.enqueue_batch(
+                label,
+                "comsol",
+                [candidate.parameters for candidate in candidates],
+                output_formulas=plan.output_formulas,
+                run_context=plan.run_context,
+            )
+            for primary_job_id, reference_job_id in zip(source_ids, job_ids):
+                self.store.save_reference_validation(
+                    primary_job_id,
+                    reference_job_id,
+                    "unavailable",
+                    {
+                        "campaign_status": "queued",
+                        "reference_batch": label,
+                    },
+                )
+            self.refresh_jobs()
+            refresh_campaign()
+            on_updated(label)
+            if not start:
+                self.activity_var.set(
+                    f"{len(job_ids)} reference state(s) were added to the queue."
+                )
+                return
+            self.activity_var.set(
+                f"COMSOL is processing {len(job_ids)} reference state(s)."
+            )
+            runner = self._runner(current_config)
+
+            def finished(summary: dict[str, int]) -> None:
+                self._submitted_jobs_finished(job_ids, summary)
+                if window.winfo_exists():
+                    refresh_campaign()
+                on_updated(label)
+
+            self._run_background(
+                "run",
+                lambda: self._run_job_ids(runner, job_ids),
+                finished,
+            )
+
+        def open_reference_job(_event: tk.Event | None = None) -> None:
+            if current_plan is None or not tree.selection():
+                return
+            index = int(tree.selection()[0].split(":", 1)[1]) - 1
+            job_id = current_plan.states[index].reference_job_id
+            if job_id is not None:
+                self._show_job(self.store.get(job_id))
+
+        def export_report(extension: str) -> None:
+            plan = refresh_campaign(show_errors=True)
+            if plan is None:
+                return
+            safe_label = re.sub(
+                r"[^A-Za-z0-9_.-]+",
+                "-",
+                batch_var.get().strip(),
+            ).strip("-")
+            destination = filedialog.asksaveasfilename(
+                parent=window,
+                title="Export reference campaign",
+                initialfile=f"{safe_label or 'reference-campaign'}{extension}",
+                defaultextension=extension,
+                filetypes=[
+                    ("CSV file", "*.csv")
+                    if extension == ".csv"
+                    else ("HTML report", "*.html")
+                ],
+            )
+            if not destination:
+                return
+            try:
+                output = (
+                    write_reference_campaign_csv(destination, plan)
+                    if extension == ".csv"
+                    else write_reference_campaign_html(destination, plan)
+                )
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Reference campaign", str(exc), parent=window)
+                return
+            self.activity_var.set(f"Reference campaign exported to {output.name}.")
+
+        footer = ttk.Frame(container, style="Card.TFrame")
+        footer.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        footer.grid_columnconfigure(0, weight=1)
+        ttk.Label(footer, textvariable=summary_var, style="CardText.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        actions = ttk.Frame(footer, style="Card.TFrame")
+        actions.grid(row=0, column=1, sticky="e")
+        ttk.Button(
+            actions,
+            text="Refresh",
+            style="Secondary.TButton",
+            command=lambda: refresh_campaign(show_errors=True),
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="Export CSV",
+            style="Secondary.TButton",
+            command=lambda: export_report(".csv"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Export HTML",
+            style="Secondary.TButton",
+            command=lambda: export_report(".html"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Queue only",
+            style="Secondary.TButton",
+            command=lambda: submit_campaign(start=False),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Run campaign",
+            style="Primary.TButton",
+            command=lambda: submit_campaign(start=True),
+        ).pack(side="left", padx=(8, 0))
+        tree.bind("<Double-1>", open_reference_job)
+        batch_var.trace_add("write", lambda *_args: refresh_campaign())
+        refresh_campaign()
 
     def _open_robust_analysis(self) -> None:
         analysis_jobs = self.store.list(limit=5000)

@@ -29,6 +29,11 @@ sim-assistant desktop
 Open **Rank results**, then choose **Reference validation**. Select the fast-model
 batch as **Primary batch** and the higher-fidelity run as **Reference batch**.
 
+If the reference batch does not exist yet, enter its new name and choose
+**Build campaign**. The campaign builder maps selected primary states into the
+currently connected reference model. See
+[`REFERENCE_VALIDATION_CAMPAIGNS.md`](REFERENCE_VALIDATION_CAMPAIGNS.md).
+
 Enable **Pinned primary jobs only** to restrict the comparison to deliberately
 preserved candidates.
 

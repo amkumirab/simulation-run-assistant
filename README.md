@@ -49,6 +49,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Multi-objective Pareto fronts with weighted trade-off scoring and portable reports
 - Robust misalignment grouping with coverage gates, worst-case ranking, and heatmaps
 - Reference-model validation with unit-aware pairing and explicit error tolerances
+- Resumable reference campaigns generated from selected primary design states
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -226,6 +227,13 @@ set relative or absolute error tolerances, and inspect Passed, Warning, Failed, 
 ineligible pairs. Validation links can be saved locally, and CSV or self-contained
 HTML reports contain no local model paths. See
 [`docs/REFERENCE_MODEL_VALIDATION.md`](docs/REFERENCE_MODEL_VALIDATION.md).
+
+Use **Build campaign** inside Reference validation to generate only the
+higher-fidelity states required by the selected primary Jobs. The builder checks
+the connected reference-model contract and result pipeline, previews mapped inputs,
+estimates time and storage, avoids accepted or active duplicates, and resumes
+failed or rejected states. See
+[`docs/REFERENCE_VALIDATION_CAMPAIGNS.md`](docs/REFERENCE_VALIDATION_CAMPAIGNS.md).
 
 Every completed run also receives a separate scientific-validation state:
 **Valid**, **Warning**, or **Rejected**. Validation can enforce required outputs,
@@ -416,6 +424,8 @@ interfaces or deployment options:
    the strongest complete design groups.
 3. Use the reference-validation workflow to verify selected designs against a
    higher-fidelity volume model.
+4. Generate a traceable design-decision report from the accepted campaign,
+   robustness, Pareto, and reference-validation evidence.
 
 Production and reference MPH files remain local and are never committed to this
 repository.
@@ -437,6 +447,7 @@ src/simulation_assistant/
 |-- profiles.py     # Local workspace profiles and sanitized template export
 |-- quantities.py   # Unit parsing, dimensions, and SI normalization
 |-- ranking.py      # Constrained objective ranking and CSV export
+|-- reference_campaigns.py # Resumable higher-fidelity validation campaigns
 |-- reference_validation.py # Cross-model pairing, tolerances, and reports
 |-- retention.py    # Safe artifact inventory, retention plans, and cleanup
 |-- robustness.py   # Grouped misalignment metrics, coverage, fronts, and reports
