@@ -50,6 +50,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Robust misalignment grouping with coverage gates, worst-case ranking, and heatmaps
 - Reference-model validation with unit-aware pairing and explicit error tolerances
 - Resumable reference campaigns generated from selected primary design states
+- Automated mesh convergence studies with cost comparison and portable reports
 - Authorized Telegram command bot and success/failure notifications
 - Unit tests on Python 3.10 and 3.12 through GitHub Actions
 - No third-party runtime dependencies
@@ -406,6 +407,8 @@ sim-assistant comsol-check
 See [`docs/COMSOL_INTEGRATION.md`](docs/COMSOL_INTEGRATION.md) for the full
 configuration. See [`docs/MODEL_CONTRACT.md`](docs/MODEL_CONTRACT.md) for the
 versioned contract schema, desktop preflight states, and WPT example.
+See [`docs/MESH_CONVERGENCE.md`](docs/MESH_CONVERGENCE.md) for model preparation,
+ordered mesh levels, convergence rules, and report interpretation.
 
 ## Scientific roadmap
 
@@ -424,7 +427,9 @@ interfaces or deployment options:
    the strongest complete design groups.
 3. Use the reference-validation workflow to verify selected designs against a
    higher-fidelity volume model.
-4. Generate a traceable design-decision report from the accepted campaign,
+4. Run a mesh convergence study on the retained design candidates and select the
+   lightest level that keeps every required output within tolerance.
+5. Generate a traceable design-decision report from the accepted campaign,
    robustness, Pareto, and reference-validation evidence.
 
 Production and reference MPH files remain local and are never committed to this
@@ -441,6 +446,7 @@ src/simulation_assistant/
 |-- formulas.py     # Safe computed-output expression engine
 |-- model_contract.py # Versioned model interface and compatibility checks
 |-- manifest.py     # JSON validation and sweep expansion
+|-- mesh_convergence.py # Resumable mesh studies, convergence, and reports
 |-- notifications.py
 |-- pareto.py       # Multi-objective dominance, trade-off scores, and reports
 |-- plot_artifacts.py # Safe plot lookup and native preview helpers
@@ -476,6 +482,8 @@ src/simulation_assistant/
 - The Telegram command bot is a foreground long-polling process.
 - COMSOL requires a local installation, compatible licenses, and a known model
   contract; arbitrary MPH files cannot be interpreted automatically.
+- Mesh convergence requires the connected model and Job Sequence to expose and
+  apply a contract-declared mesh-control input.
 
 ## License
 

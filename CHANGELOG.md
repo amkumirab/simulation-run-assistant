@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.27.0] - 2026-09-25
+
+### Added
+
+- Native automated mesh convergence workspace for accepted COMSOL designs
+- Ordered, model-defined mesh levels with resumable execution and duplicate reuse
+- Per-output relative-change tolerances across adjacent mesh refinements
+- Conservative lightest-mesh recommendation that checks every remaining refinement
+- Accuracy-versus-cost chart using degrees of freedom and solver duration evidence
+- Portable CSV and self-contained HTML mesh convergence reports
+
+### Changed
+
+- The Runs workspace now provides direct access to mesh convergence studies
+- Package version increased to 0.27.0
+
 ## [0.26.0] - 2026-09-23
 
 ### Added

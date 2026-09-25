@@ -40,6 +40,14 @@ from simulation_assistant.model_contract import (
     load_model_contract,
     validate_contract_parameters,
 )
+from simulation_assistant.mesh_convergence import (
+    ConvergenceMetric,
+    MeshConvergencePlan,
+    build_mesh_convergence_plan,
+    parse_mesh_levels,
+    write_mesh_convergence_csv,
+    write_mesh_convergence_html,
+)
 from simulation_assistant.plot_artifacts import (
     PlotComparisonArtifact,
     format_file_size,
@@ -927,6 +935,12 @@ class DesktopApp:
         ).pack(side="left", padx=(8, 0))
         ttk.Button(
             controls,
+            text="Mesh study",
+            style="Secondary.TButton",
+            command=self._open_mesh_convergence,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            controls,
             text="Refresh",
             style="Secondary.TButton",
             command=self.refresh_jobs,
@@ -1595,6 +1609,759 @@ class DesktopApp:
             command=lambda: submit_campaign(start=True),
         ).pack(side="left", padx=(8, 0))
         refresh_campaign()
+
+    def _open_mesh_convergence(self) -> None:
+        jobs = self.store.list(limit=5000)
+
+        def validation_status(job: Job) -> str:
+            result = job.result if isinstance(job.result, dict) else {}
+            metadata = result.get("metadata", {})
+            validation = (
+                metadata.get("scientific_validation", {})
+                if isinstance(metadata, dict)
+                else {}
+            )
+            return (
+                str(validation.get("status", "not_recorded"))
+                if isinstance(validation, dict)
+                else "not_recorded"
+            )
+
+        def accepted_jobs() -> list[Job]:
+            return [
+                job
+                for job in jobs
+                if job.adapter == "comsol"
+                and job.status == JobStatus.SUCCEEDED
+                and validation_status(job) in {"valid", "warning"}
+            ]
+
+        eligible = accepted_jobs()
+        if not eligible:
+            messagebox.showinfo(
+                "Mesh convergence",
+                "Complete at least one scientifically accepted COMSOL job first.",
+                parent=self.root,
+            )
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Mesh convergence study")
+        window.geometry("1210x780")
+        window.minsize(1040, 680)
+        window.transient(self.root)
+
+        container = ttk.Frame(window, style="Card.TFrame", padding=18)
+        container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(5, weight=1)
+
+        ttk.Label(
+            container,
+            text="Automated mesh convergence study",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            container,
+            text=(
+                "Reuse an accepted design, run ordered mesh levels, and find the "
+                "lightest level whose physical outputs remain stable through every "
+                "finer level. The connected model must expose a mesh-control input."
+            ),
+            style="CardText.TLabel",
+            wraplength=1140,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        batches = sorted({job.batch_name for job in eligible})
+        batch_var = tk.StringVar(value=batches[0])
+        base_job_var = tk.StringVar()
+        mesh_parameter_var = tk.StringVar()
+        levels_var = tk.StringVar(
+            value="Coarse=1.5, Normal=1.0, Fine=0.7, Extra fine=0.5"
+        )
+        run_label_var = tk.StringVar(
+            value=f"mesh-convergence-{datetime.now().strftime('%Y%m%d-%H%M')}"
+        )
+        readiness_var = tk.StringVar(value="Configure the study and select Refresh.")
+        summary_var = tk.StringVar()
+
+        settings = ttk.Frame(container, style="Card.TFrame")
+        settings.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        for column in (1, 3, 5):
+            settings.grid_columnconfigure(column, weight=1)
+        ttk.Label(settings, text="SOURCE BATCH", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        batch_combo = ttk.Combobox(
+            settings,
+            textvariable=batch_var,
+            values=batches,
+            state="readonly",
+            width=22,
+        )
+        batch_combo.grid(row=0, column=1, sticky="ew", padx=(8, 16))
+        ttk.Label(settings, text="BASE JOB", style="Field.TLabel").grid(
+            row=0, column=2, sticky="w"
+        )
+        base_job_combo = ttk.Combobox(
+            settings,
+            textvariable=base_job_var,
+            state="readonly",
+            width=27,
+        )
+        base_job_combo.grid(row=0, column=3, sticky="ew", padx=(8, 16))
+        ttk.Label(settings, text="MESH INPUT", style="Field.TLabel").grid(
+            row=0, column=4, sticky="w"
+        )
+        mesh_parameter_combo = ttk.Combobox(
+            settings,
+            textvariable=mesh_parameter_var,
+            state="readonly",
+            width=18,
+        )
+        mesh_parameter_combo.grid(row=0, column=5, sticky="ew", padx=(8, 0))
+
+        ttk.Label(settings, text="ORDERED LEVELS", style="Field.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(10, 0)
+        )
+        ttk.Entry(settings, textvariable=levels_var).grid(
+            row=1,
+            column=1,
+            columnspan=3,
+            sticky="ew",
+            padx=(8, 16),
+            pady=(10, 0),
+        )
+        ttk.Label(settings, text="RUN LABEL", style="Field.TLabel").grid(
+            row=1, column=4, sticky="w", pady=(10, 0)
+        )
+        ttk.Entry(settings, textvariable=run_label_var).grid(
+            row=1, column=5, sticky="ew", padx=(8, 0), pady=(10, 0)
+        )
+        ttk.Label(
+            settings,
+            text=(
+                "Enter levels from coarse to fine as label=value pairs. Values are "
+                "passed to the selected COMSOL model parameter."
+            ),
+            style="CardText.TLabel",
+        ).grid(row=2, column=1, columnspan=5, sticky="w", padx=(8, 0), pady=(3, 0))
+
+        metric_frame = ttk.Frame(container, style="Card.TFrame")
+        metric_frame.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        metric_frame.grid_columnconfigure(1, weight=1)
+        ttk.Label(metric_frame, text="CONVERGENCE OUTPUT", style="Field.TLabel").grid(
+            row=0, column=1, sticky="w", padx=(8, 0)
+        )
+        ttk.Label(metric_frame, text="MAX CHANGE %", style="Field.TLabel").grid(
+            row=0, column=2, sticky="w", padx=(8, 0)
+        )
+        metric_rows: list[tuple[tk.StringVar, tk.StringVar, ttk.Combobox]] = []
+        for index in range(3):
+            name_var = tk.StringVar()
+            tolerance_var = tk.StringVar(value="0.5")
+            ttk.Label(
+                metric_frame,
+                text=str(index + 1),
+                style="CardText.TLabel",
+            ).grid(row=index + 1, column=0, sticky="w", pady=(5, 0))
+            combo = ttk.Combobox(
+                metric_frame,
+                textvariable=name_var,
+                state="readonly",
+                width=42,
+            )
+            combo.grid(
+                row=index + 1,
+                column=1,
+                sticky="ew",
+                padx=(8, 0),
+                pady=(5, 0),
+            )
+            ttk.Entry(
+                metric_frame,
+                textvariable=tolerance_var,
+                width=18,
+            ).grid(
+                row=index + 1,
+                column=2,
+                sticky="w",
+                padx=(8, 0),
+                pady=(5, 0),
+            )
+            metric_rows.append((name_var, tolerance_var, combo))
+
+        ttk.Label(
+            container,
+            textvariable=readiness_var,
+            style="CardText.TLabel",
+            wraplength=1140,
+        ).grid(row=4, column=0, sticky="w", pady=(0, 8))
+
+        result_area = ttk.Panedwindow(container, orient="horizontal")
+        result_area.grid(row=5, column=0, sticky="nsew")
+        table_frame = ttk.Frame(result_area, style="Card.TFrame")
+        chart_frame = ttk.Frame(result_area, style="Card.TFrame", padding=(12, 0, 0, 0))
+        result_area.add(table_frame, weight=4)
+        result_area.add(chart_frame, weight=2)
+        table_frame.grid_columnconfigure(0, weight=1)
+        table_frame.grid_rowconfigure(0, weight=1)
+        tree = ttk.Treeview(
+            table_frame,
+            columns=(
+                "level",
+                "value",
+                "run",
+                "validation",
+                "convergence",
+                "change",
+                "dof",
+                "duration",
+                "job",
+            ),
+            show="headings",
+            height=16,
+        )
+        for name, label, width in (
+            ("level", "LEVEL", 100),
+            ("value", "MESH VALUE", 90),
+            ("run", "RUN", 85),
+            ("validation", "VALIDATION", 90),
+            ("convergence", "CONVERGENCE", 115),
+            ("change", "MAX CHANGE", 100),
+            ("dof", "DOF", 95),
+            ("duration", "DURATION", 90),
+            ("job", "JOB", 65),
+        ):
+            tree.heading(name, text=label)
+            tree.column(name, width=width, stretch=name == "convergence")
+        tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        tree.tag_configure("converged", background=COLORS["teal_soft"])
+        tree.tag_configure("not_converged", background=COLORS["red_soft"])
+        tree.tag_configure("invalid", background=COLORS["red_soft"])
+        tree.tag_configure("failed", background=COLORS["red_soft"])
+        tree.tag_configure("incomplete", background=COLORS["amber_soft"])
+
+        ttk.Label(
+            chart_frame,
+            text="Accuracy / computational cost",
+            style="CardTitle.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            chart_frame,
+            text=(
+                "Relative change for the first selected output. The dashed line is "
+                "its convergence tolerance."
+            ),
+            style="CardText.TLabel",
+            wraplength=360,
+        ).pack(anchor="w", pady=(3, 8))
+        chart = tk.Canvas(
+            chart_frame,
+            width=380,
+            height=360,
+            background=COLORS["soft"],
+            highlightthickness=1,
+            highlightbackground=COLORS["line"],
+        )
+        chart.pack(fill="both", expand=True)
+
+        current_plan: MeshConvergencePlan | None = None
+        current_config: ComsolConfig | None = None
+        base_job_lookup: dict[str, Job] = {}
+
+        def selected_base_job() -> Job:
+            job = base_job_lookup.get(base_job_var.get())
+            if job is None:
+                raise ValueError("Select an accepted base job")
+            return job
+
+        def metric_names(job: Job) -> list[str]:
+            metrics = (
+                job.result.get("metrics", {})
+                if isinstance(job.result, dict)
+                else {}
+            )
+            excluded = {name for name, _description in BUILTIN_OUTPUT_SYMBOLS}
+            return sorted(
+                str(name)
+                for name, value in metrics.items()
+                if name not in excluded
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
+            )
+
+        def refresh_base_jobs(_event: tk.Event | None = None) -> None:
+            nonlocal base_job_lookup
+            choices: list[str] = []
+            base_job_lookup = {}
+            for job in eligible:
+                if job.batch_name != batch_var.get():
+                    continue
+                label = f"#{job.id} · {parameter_summary(job.parameters, limit=3)}"
+                choices.append(label)
+                base_job_lookup[label] = job
+            base_job_combo.configure(values=choices)
+            if base_job_var.get() not in choices:
+                base_job_var.set(choices[0] if choices else "")
+            refresh_options()
+
+        def refresh_options(_event: tk.Event | None = None) -> None:
+            try:
+                base = selected_base_job()
+            except ValueError:
+                return
+            parameters = sorted(
+                self.parameter_variables
+                if self.parameter_variables
+                else base.parameters
+            )
+            mesh_parameter_combo.configure(values=parameters)
+            if mesh_parameter_var.get() not in parameters:
+                preferred = next(
+                    (
+                        name
+                        for name in (
+                            "mesh_scale",
+                            "mesh_size",
+                            "hmax",
+                            "mesh_level",
+                        )
+                        if name in parameters
+                    ),
+                    parameters[0] if parameters else "",
+                )
+                mesh_parameter_var.set(preferred)
+            available_metrics = metric_names(base)
+            preferred_metrics = [
+                name
+                for name in (
+                    "k",
+                    "coupling",
+                    "Mavg_uH",
+                    "M12_uH",
+                    "L1_uH",
+                    "L2_uH",
+                    "R1_mOhm",
+                    "R2_mOhm",
+                    "B_leak_max_mT",
+                )
+                if name in available_metrics
+            ]
+            ordered_metrics = preferred_metrics + [
+                name for name in available_metrics if name not in preferred_metrics
+            ]
+            for index, (name_var, _tolerance_var, combo) in enumerate(metric_rows):
+                combo.configure(values=["", *ordered_metrics])
+                if name_var.get() not in ordered_metrics:
+                    name_var.set(ordered_metrics[index] if index < len(ordered_metrics) else "")
+
+        def selected_metrics() -> tuple[ConvergenceMetric, ...]:
+            metrics: list[ConvergenceMetric] = []
+            for name_var, tolerance_var, _combo in metric_rows:
+                name = name_var.get().strip()
+                if not name:
+                    continue
+                try:
+                    tolerance = float(tolerance_var.get())
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Tolerance for '{name}' must be numeric"
+                    ) from exc
+                metrics.append(ConvergenceMetric(name, tolerance))
+            return tuple(metrics)
+
+        def build_plan() -> tuple[ComsolConfig, MeshConvergencePlan]:
+            config = self._require_connected_config()
+            if config.contract_path is None:
+                raise ValueError("Select and validate a model contract first")
+            if not config.job_tag:
+                raise ValueError("Select a COMSOL Job Sequence instead of a Study")
+            pipeline = (self.connection_report or {}).get("result_pipeline") or {}
+            if pipeline.get("status") != "fresh":
+                raise ValueError(
+                    "The selected Job Sequence must provide a Fresh result pipeline"
+                )
+            base = selected_base_job()
+            levels = parse_mesh_levels(levels_var.get())
+            parameter = mesh_parameter_var.get().strip()
+            if parameter not in self.parameter_variables:
+                raise ValueError(
+                    "The selected mesh input is not exposed by the connected model"
+                )
+            formulas = dict(base.output_formulas)
+            context = build_comsol_run_context(
+                config.model_path,
+                study_tag=config.study_tag,
+                job_tag=config.job_tag,
+                plot_tags=config.plot_tags,
+                contract_path=config.contract_path,
+            )
+            initial = build_mesh_convergence_plan(
+                base,
+                parameter,
+                levels,
+                selected_metrics(),
+                output_formulas=formulas,
+                run_context=context,
+                existing_jobs=[],
+            )
+            validate_contract_parameters(
+                load_model_contract(config.contract_path),
+                [state.parameters for state in initial.states],
+            )
+            existing = self.store.list_by_run_signatures(
+                state.signature for state in initial.states
+            )
+            return config, build_mesh_convergence_plan(
+                base,
+                parameter,
+                levels,
+                selected_metrics(),
+                output_formulas=formulas,
+                run_context=context,
+                existing_jobs=existing,
+            )
+
+        def draw_chart(_event: tk.Event | None = None) -> None:
+            chart.delete("all")
+            width = max(chart.winfo_width(), 360)
+            height = max(chart.winfo_height(), 320)
+            if current_plan is None or not current_plan.metrics:
+                chart.create_text(
+                    width / 2,
+                    height / 2,
+                    text="No completed comparisons",
+                    fill=COLORS["muted"],
+                )
+                return
+            metric = current_plan.metrics[0]
+            comparable_states = [
+                state
+                for state in current_plan.states
+                if metric.name in state.relative_changes_percent
+            ]
+            use_dof = bool(comparable_states) and all(
+                state.degrees_of_freedom is not None
+                for state in comparable_states
+            )
+            points = [
+                (
+                    float(state.degrees_of_freedom)
+                    if use_dof and state.degrees_of_freedom is not None
+                    else float(state.index),
+                    state.relative_changes_percent[metric.name],
+                    state.level,
+                    state.convergence_status,
+                )
+                for state in comparable_states
+            ]
+            if not points:
+                chart.create_text(
+                    width / 2,
+                    height / 2,
+                    text="Complete two adjacent levels to draw the chart",
+                    fill=COLORS["muted"],
+                    font=("Segoe UI", 9),
+                )
+                return
+            left, right, top, bottom = 58, width - 22, 22, height - 52
+            x_values = [point[0] for point in points]
+            y_values = [point[1] for point in points]
+            x_min, x_max = min(x_values), max(x_values)
+            if x_min == x_max:
+                x_min -= 1
+                x_max += 1
+            y_max = max([*y_values, metric.max_relative_change_percent, 1e-12]) * 1.15
+
+            def x_position(value: float) -> float:
+                return left + (value - x_min) / (x_max - x_min) * (right - left)
+
+            def y_position(value: float) -> float:
+                return bottom - value / y_max * (bottom - top)
+
+            chart.create_line(left, bottom, right, bottom, fill=COLORS["muted"])
+            chart.create_line(left, bottom, left, top, fill=COLORS["muted"])
+            tolerance_y = y_position(metric.max_relative_change_percent)
+            chart.create_line(
+                left,
+                tolerance_y,
+                right,
+                tolerance_y,
+                fill=COLORS["amber"],
+                dash=(5, 4),
+            )
+            chart.create_text(
+                right,
+                tolerance_y - 8,
+                text=f"{metric.max_relative_change_percent:g}% limit",
+                anchor="e",
+                fill=COLORS["amber"],
+                font=("Segoe UI", 8),
+            )
+            previous: tuple[float, float] | None = None
+            for x_value, y_value, label, status in points:
+                x = x_position(x_value)
+                y = y_position(y_value)
+                if previous is not None:
+                    chart.create_line(previous[0], previous[1], x, y, fill=COLORS["blue"], width=2)
+                color = COLORS["teal"] if status == "converged" else COLORS["red"]
+                chart.create_oval(x - 5, y - 5, x + 5, y + 5, fill=color, outline="white")
+                chart.create_text(x, y - 12, text=label, fill=color, font=("Segoe UI Semibold", 8))
+                previous = (x, y)
+            chart.create_text(
+                (left + right) / 2,
+                height - 14,
+                text="Degrees of freedom" if use_dof else "Mesh level",
+                fill=COLORS["ink"],
+                font=("Segoe UI Semibold", 9),
+            )
+            chart.create_text(
+                14,
+                (top + bottom) / 2,
+                text=f"{metric.name} change (%)",
+                angle=90,
+                fill=COLORS["ink"],
+                font=("Segoe UI Semibold", 9),
+            )
+
+        def refresh_study(*, show_error: bool = False) -> MeshConvergencePlan | None:
+            nonlocal jobs, eligible, current_plan, current_config
+            jobs = self.store.list(limit=5000)
+            eligible = accepted_jobs()
+            try:
+                current_config, current_plan = build_plan()
+            except (OSError, ValueError) as exc:
+                current_config = None
+                current_plan = None
+                tree.delete(*tree.get_children())
+                readiness_var.set(f"Not ready · {exc}")
+                summary_var.set("Connect a compatible model and review the study settings.")
+                draw_chart()
+                if show_error:
+                    messagebox.showerror("Mesh convergence", str(exc), parent=window)
+                return None
+
+            tree.delete(*tree.get_children())
+            for state in current_plan.states:
+                maximum_change = (
+                    max(state.relative_changes_percent.values())
+                    if state.relative_changes_percent
+                    else None
+                )
+                tree.insert(
+                    "",
+                    "end",
+                    iid=f"mesh:{state.index}",
+                    values=(
+                        state.level,
+                        state.mesh_value,
+                        state.run_status,
+                        state.validation_status,
+                        state.convergence_status.replace("_", " "),
+                        f"{maximum_change:.4g}%" if maximum_change is not None else "",
+                        self._format_number(state.degrees_of_freedom) if state.degrees_of_freedom is not None else "",
+                        self._format_duration(state.duration_seconds) if state.duration_seconds is not None else "",
+                        f"#{state.job_id}" if state.job_id else "",
+                    ),
+                    tags=(state.convergence_status,),
+                )
+            estimate = estimate_sequential_seconds(
+                len(current_plan.pending),
+                self.store.list(status=JobStatus.SUCCEEDED, limit=20),
+            )
+            estimate_text = (
+                f" · about {self._format_duration(estimate)}"
+                if estimate is not None and current_plan.pending
+                else ""
+            )
+            readiness_var.set(
+                "Ready · model contract accepted · Job Sequence pipeline is Fresh · "
+                + current_plan.message
+            )
+            recommendation = (
+                f" · recommended: {current_plan.recommended_level} "
+                f"(Job #{current_plan.recommended_job_id})"
+                if current_plan.recommended_level
+                else ""
+            )
+            summary_var.set(
+                f"{current_plan.completed_count}/{len(current_plan.states)} accepted · "
+                f"{current_plan.active_count} active · {len(current_plan.pending)} to submit"
+                f"{estimate_text} · status: {current_plan.status}{recommendation}"
+            )
+            draw_chart()
+            return current_plan
+
+        def submit_study(*, start: bool) -> None:
+            plan = refresh_study(show_error=True)
+            if plan is None or current_config is None:
+                return
+            if self.busy:
+                messagebox.showinfo(
+                    "Mesh convergence",
+                    "Wait for the current background operation to finish.",
+                    parent=window,
+                )
+                return
+            if start and self.store.is_queue_paused():
+                messagebox.showerror(
+                    "Mesh convergence",
+                    "Resume the run queue before starting mesh-study jobs.",
+                    parent=window,
+                )
+                return
+            candidates = plan.candidates_to_enqueue()
+            if not candidates:
+                messagebox.showinfo(
+                    "Mesh convergence",
+                    "Every mesh level is accepted or currently scheduled.",
+                    parent=window,
+                )
+                return
+            label = run_label_var.get().strip()
+            if not label:
+                messagebox.showerror(
+                    "Mesh convergence",
+                    "Run label cannot be empty.",
+                    parent=window,
+                )
+                return
+            if not messagebox.askyesno(
+                "Confirm mesh study",
+                f"{'Run' if start else 'Queue'} {len(candidates)} mesh level(s)?\n\n"
+                "Accepted and currently scheduled levels will not be duplicated.",
+                parent=window,
+            ):
+                return
+            job_ids = self.store.enqueue_batch(
+                label,
+                "comsol",
+                [candidate.parameters for candidate in candidates],
+                output_formulas=plan.output_formulas,
+                run_context=plan.run_context,
+            )
+            self.refresh_jobs()
+            refresh_study()
+            if not start:
+                self.activity_var.set(
+                    f"{len(job_ids)} mesh-study job(s) were added to the queue."
+                )
+                return
+            self.activity_var.set(
+                f"COMSOL is processing {len(job_ids)} mesh-study job(s)."
+            )
+            runner = self._runner(current_config)
+
+            def finished(summary: dict[str, int]) -> None:
+                self._submitted_jobs_finished(job_ids, summary)
+                if window.winfo_exists():
+                    refresh_study()
+
+            self._run_background(
+                "run",
+                lambda: self._run_job_ids(runner, job_ids),
+                finished,
+            )
+
+        def export_report(extension: str) -> None:
+            plan = refresh_study(show_error=True)
+            if plan is None:
+                return
+            safe_label = re.sub(
+                r"[^A-Za-z0-9_.-]+",
+                "-",
+                run_label_var.get().strip() or "mesh-convergence",
+            ).strip("-")
+            destination = filedialog.asksaveasfilename(
+                parent=window,
+                title="Export mesh convergence study",
+                initialfile=f"{safe_label or 'mesh-convergence'}{extension}",
+                defaultextension=extension,
+                filetypes=[
+                    ("CSV file", "*.csv")
+                    if extension == ".csv"
+                    else ("HTML report", "*.html")
+                ],
+            )
+            if not destination:
+                return
+            try:
+                output = (
+                    write_mesh_convergence_csv(destination, plan)
+                    if extension == ".csv"
+                    else write_mesh_convergence_html(destination, plan)
+                )
+            except (OSError, ValueError) as exc:
+                messagebox.showerror(
+                    "Export mesh convergence", str(exc), parent=window
+                )
+                return
+            self.activity_var.set(
+                f"Mesh convergence report exported to {output.name}."
+            )
+
+        def open_selected(_event: tk.Event | None = None) -> None:
+            selection = tree.selection()
+            if not selection or current_plan is None:
+                return
+            index = int(selection[0].split(":", 1)[1]) - 1
+            job_id = current_plan.states[index].job_id
+            if job_id is not None:
+                self._show_job(self.store.get(job_id))
+
+        tree.bind("<Double-1>", open_selected)
+        chart.bind("<Configure>", draw_chart)
+        batch_combo.bind("<<ComboboxSelected>>", refresh_base_jobs)
+        base_job_combo.bind("<<ComboboxSelected>>", refresh_options)
+
+        footer = ttk.Frame(container, style="Card.TFrame")
+        footer.grid(row=6, column=0, sticky="ew", pady=(12, 0))
+        footer.grid_columnconfigure(0, weight=1)
+        ttk.Label(
+            footer,
+            textvariable=summary_var,
+            style="CardText.TLabel",
+            wraplength=650,
+        ).grid(row=0, column=0, sticky="w")
+        actions = ttk.Frame(footer, style="Card.TFrame")
+        actions.grid(row=0, column=1, sticky="e")
+        ttk.Button(
+            actions,
+            text="Refresh",
+            style="Secondary.TButton",
+            command=refresh_study,
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="Export CSV",
+            style="Secondary.TButton",
+            command=lambda: export_report(".csv"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Export HTML",
+            style="Secondary.TButton",
+            command=lambda: export_report(".html"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Queue remaining",
+            style="Secondary.TButton",
+            command=lambda: submit_study(start=False),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Run remaining",
+            style="Primary.TButton",
+            command=lambda: submit_study(start=True),
+        ).pack(side="left", padx=(8, 0))
+
+        refresh_base_jobs()
+        refresh_study()
 
     def _build_compare(self, parent: ttk.Frame) -> None:
         parent.grid_columnconfigure(0, weight=1)
