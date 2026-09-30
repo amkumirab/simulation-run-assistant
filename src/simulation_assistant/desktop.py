@@ -120,6 +120,16 @@ from simulation_assistant.sweeps import (
     write_comparison_csv,
 )
 from simulation_assistant.types import Job, JobStatus
+from simulation_assistant.wpt_circuit import (
+    CircuitLimits,
+    CircuitStudy,
+    SeriesSeriesSettings,
+    TwoPortMetricMap,
+    analyze_fixed_control_scenarios,
+    suggest_two_port_metric_names,
+    write_circuit_study_csv,
+    write_circuit_study_html,
+)
 
 
 COLORS = {
@@ -932,6 +942,12 @@ class DesktopApp:
             text="WPT campaign",
             style="Secondary.TButton",
             command=self._open_wpt_campaign,
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            controls,
+            text="Circuit study",
+            style="Secondary.TButton",
+            command=self._open_wpt_circuit_study,
         ).pack(side="left", padx=(8, 0))
         ttk.Button(
             controls,
@@ -5884,6 +5900,446 @@ class DesktopApp:
         tree.bind("<Double-1>", open_reference_job)
         batch_var.trace_add("write", lambda *_args: refresh_campaign())
         refresh_campaign()
+
+    def _open_wpt_circuit_study(self) -> None:
+        analysis_jobs = self.store.list(limit=5000)
+        batches = sorted(
+            {
+                job.batch_name
+                for job in analysis_jobs
+                if isinstance(job.result, dict)
+                and isinstance(job.result.get("metrics"), dict)
+            }
+        )
+        if not batches:
+            messagebox.showinfo(
+                "Circuit study",
+                "No completed batches with result metrics are available.",
+                parent=self.root,
+            )
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Series-Series circuit study")
+        window.geometry("1240x820")
+        window.minsize(1040, 700)
+        window.transient(self.root)
+        container = ttk.Frame(window, style="Card.TFrame", padding=18)
+        container.pack(fill="both", expand=True)
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(6, weight=1)
+
+        ttk.Label(
+            container,
+            text="Series-Series circuit study",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            container,
+            text=(
+                "Tune the nominal AC equivalent, then keep its compensation, load, "
+                "frequency, and source voltage fixed across every selected FEM result. "
+                "Mapped metrics must use SI units."
+            ),
+            style="CardText.TLabel",
+            wraplength=1160,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+
+        selection = ttk.Frame(container, style="Card.TFrame")
+        selection.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        selection.grid_columnconfigure(1, weight=1)
+        selection.grid_columnconfigure(3, weight=2)
+        batch_var = tk.StringVar(
+            value=(
+                self.ranking_batch_var.get()
+                if self.ranking_batch_var.get() in batches
+                else batches[0]
+            )
+        )
+        nominal_var = tk.StringVar()
+        ttk.Label(selection, text="BATCH", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        batch_combo = ttk.Combobox(
+            selection,
+            textvariable=batch_var,
+            values=batches,
+            state="readonly",
+            width=26,
+        )
+        batch_combo.grid(row=0, column=1, sticky="ew", padx=(8, 18))
+        ttk.Label(selection, text="NOMINAL JOB", style="Field.TLabel").grid(
+            row=0, column=2, sticky="w"
+        )
+        nominal_combo = ttk.Combobox(
+            selection,
+            textvariable=nominal_var,
+            state="readonly",
+            width=64,
+        )
+        nominal_combo.grid(row=0, column=3, sticky="ew", padx=(8, 0))
+
+        mapping_frame = ttk.Frame(container, style="Card.TFrame", padding=(0, 0, 0, 8))
+        mapping_frame.grid(row=3, column=0, sticky="ew")
+        ttk.Label(
+            mapping_frame,
+            text="Two-port result mapping",
+            style="CardTitle.TLabel",
+        ).grid(row=0, column=0, columnspan=6, sticky="w", pady=(0, 8))
+        mapping_fields = (
+            ("frequency", "Frequency (Hz)"),
+            ("primary_inductance", "Primary L (H)"),
+            ("secondary_inductance", "Secondary L (H)"),
+            ("mutual_inductance_12", "M12 (H)"),
+            ("mutual_inductance_21", "M21 (H)"),
+            ("resistance_11", "R11 (ohm)"),
+            ("resistance_22", "R22 (ohm)"),
+            ("resistance_12", "R12 (ohm)"),
+            ("resistance_21", "R21 (ohm)"),
+        )
+        metric_vars = {field: tk.StringVar() for field, _label in mapping_fields}
+        metric_combos: dict[str, ttk.Combobox] = {}
+        for index, (field, label) in enumerate(mapping_fields):
+            row = 1 + index // 3
+            pair_column = (index % 3) * 2
+            mapping_frame.grid_columnconfigure(pair_column + 1, weight=1)
+            ttk.Label(mapping_frame, text=label, style="Field.TLabel").grid(
+                row=row,
+                column=pair_column,
+                sticky="w",
+                padx=(0 if pair_column == 0 else 14, 7),
+                pady=3,
+            )
+            combo = ttk.Combobox(
+                mapping_frame,
+                textvariable=metric_vars[field],
+                state="readonly",
+                width=22,
+            )
+            combo.grid(row=row, column=pair_column + 1, sticky="ew", pady=3)
+            metric_combos[field] = combo
+
+        settings_frame = ttk.Frame(container, style="Card.TFrame")
+        settings_frame.grid(row=4, column=0, sticky="ew", pady=(0, 10))
+        for column in (1, 3, 5, 7):
+            settings_frame.grid_columnconfigure(column, weight=1)
+        target_var = tk.StringVar(value="3700")
+        esr_var = tk.StringVar(value="0.005")
+        load_min_var = tk.StringVar(value="0.02")
+        load_max_var = tk.StringVar(value="20")
+        samples_var = tk.StringVar(value="500")
+        current_limit_var = tk.StringVar(value="100")
+        voltage_limit_var = tk.StringVar(value="1200")
+        retention_var = tk.StringVar(value="80")
+        balance_var = tk.StringVar(value="1e-8")
+        configuration_fields = (
+            ("Target load (W)", target_var),
+            ("Capacitor ESR (ohm each)", esr_var),
+            ("Load min (ohm)", load_min_var),
+            ("Load max (ohm)", load_max_var),
+            ("Load samples", samples_var),
+            ("Current limit (A RMS)", current_limit_var),
+            ("Capacitor limit (V RMS)", voltage_limit_var),
+            ("Power retention min (%)", retention_var),
+            ("Energy-balance tolerance", balance_var),
+        )
+        for index, (label, variable) in enumerate(configuration_fields):
+            row = index // 4
+            pair_column = (index % 4) * 2
+            ttk.Label(settings_frame, text=label, style="Field.TLabel").grid(
+                row=row * 2,
+                column=pair_column,
+                columnspan=2,
+                sticky="w",
+                padx=(0 if pair_column == 0 else 12, 0),
+                pady=(0 if row == 0 else 8, 2),
+            )
+            ttk.Entry(settings_frame, textvariable=variable, width=16).grid(
+                row=row * 2 + 1,
+                column=pair_column,
+                columnspan=2,
+                sticky="ew",
+                padx=(0 if pair_column == 0 else 12, 0),
+            )
+
+        controls_var = tk.StringVar(value="Select a nominal job and analyze the batch.")
+        ttk.Label(
+            container,
+            textvariable=controls_var,
+            style="CardText.TLabel",
+            wraplength=1160,
+        ).grid(row=5, column=0, sticky="w", pady=(2, 8))
+
+        result_frame = ttk.Frame(container, style="Card.TFrame")
+        result_frame.grid(row=6, column=0, sticky="nsew")
+        result_frame.grid_columnconfigure(0, weight=1)
+        result_frame.grid_rowconfigure(0, weight=1)
+        tree = ttk.Treeview(
+            result_frame,
+            columns=(
+                "job",
+                "status",
+                "validation",
+                "power",
+                "efficiency",
+                "current",
+                "voltage",
+                "retention",
+                "parameters",
+                "checks",
+            ),
+            show="headings",
+            height=13,
+        )
+        for name, label, width in (
+            ("job", "JOB", 60),
+            ("status", "STATUS", 75),
+            ("validation", "VALIDATION", 105),
+            ("power", "POWER (W)", 100),
+            ("efficiency", "AC EFF. (%)", 100),
+            ("current", "CURRENT (A)", 110),
+            ("voltage", "MAX CAP (V)", 95),
+            ("retention", "RETENTION", 105),
+            ("parameters", "INPUT STATE", 210),
+            ("checks", "CHECK RESULT", 160),
+        ):
+            tree.heading(name, text=label)
+            tree.column(name, width=width, stretch=name in {"parameters", "checks"})
+        tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(result_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        horizontal_scrollbar = ttk.Scrollbar(
+            result_frame,
+            orient="horizontal",
+            command=tree.xview,
+        )
+        tree.configure(xscrollcommand=horizontal_scrollbar.set)
+        horizontal_scrollbar.grid(row=1, column=0, sticky="ew")
+        tree.tag_configure("passed", background=COLORS["teal_soft"])
+        tree.tag_configure("failed", background=COLORS["red_soft"])
+        tree.tag_configure("ineligible", foreground=COLORS["muted"])
+        tree.tag_configure("nominal", font=("Segoe UI Semibold", 9))
+
+        current_study: CircuitStudy | None = None
+        nominal_lookup: dict[str, Job] = {}
+
+        def batch_jobs() -> list[Job]:
+            return [job for job in analysis_jobs if job.batch_name == batch_var.get()]
+
+        def metric_names() -> list[str]:
+            return sorted(
+                {
+                    str(name)
+                    for job in batch_jobs()
+                    if isinstance(job.result, dict)
+                    and isinstance(job.result.get("metrics"), dict)
+                    for name, value in job.result["metrics"].items()
+                    if isinstance(value, (int, float)) and not isinstance(value, bool)
+                }
+            )
+
+        def accepted_result(job: Job) -> bool:
+            result = job.result if isinstance(job.result, dict) else {}
+            metadata = result.get("metadata", {})
+            validation = (
+                metadata.get("scientific_validation", {})
+                if isinstance(metadata, dict)
+                else {}
+            )
+            return (
+                job.status == JobStatus.SUCCEEDED
+                and isinstance(validation, dict)
+                and validation.get("status") in {"valid", "warning"}
+            )
+
+        def refresh_batch(_event: tk.Event | None = None) -> None:
+            nonlocal nominal_lookup, current_study
+            names = metric_names()
+            suggestions = suggest_two_port_metric_names(names)
+            for field, combo in metric_combos.items():
+                combo.configure(values=names)
+                metric_vars[field].set(suggestions.get(field, ""))
+            nominal_lookup = {}
+            displays: list[str] = []
+            for job in batch_jobs():
+                if not accepted_result(job):
+                    continue
+                display = f"#{job.id} · {parameter_summary(job.parameters, limit=5)}"
+                nominal_lookup[display] = job
+                displays.append(display)
+            nominal_combo.configure(values=displays)
+            nominal_var.set(displays[0] if displays else "")
+            current_study = None
+            tree.delete(*tree.get_children())
+            if len(suggestions) == len(mapping_fields):
+                controls_var.set(
+                    "All two-port metrics were detected. Review the nominal job and limits."
+                )
+            else:
+                controls_var.set(
+                    f"Detected {len(suggestions)}/{len(mapping_fields)} required metrics. "
+                    "Complete the empty mappings before analysis."
+                )
+
+        def read_float(variable: tk.StringVar, label: str) -> float:
+            try:
+                return float(variable.get().strip())
+            except ValueError as exc:
+                raise ValueError(f"{label} must be a number") from exc
+
+        def calculate(*, show_errors: bool) -> CircuitStudy | None:
+            nonlocal current_study
+            try:
+                nominal_job = nominal_lookup.get(nominal_var.get())
+                if nominal_job is None:
+                    raise ValueError("Select a successful nominal job")
+                mapping = TwoPortMetricMap(
+                    **{field: variable.get() for field, variable in metric_vars.items()}
+                )
+                settings = SeriesSeriesSettings(
+                    target_load_power_w=read_float(target_var, "Target load"),
+                    capacitor_esr_each_ohm=read_float(esr_var, "Capacitor ESR"),
+                    load_min_ohm=read_float(load_min_var, "Minimum load"),
+                    load_max_ohm=read_float(load_max_var, "Maximum load"),
+                    load_samples=int(samples_var.get().strip()),
+                )
+                limits = CircuitLimits(
+                    max_coil_current_rms_a=read_float(
+                        current_limit_var,
+                        "Current limit",
+                    ),
+                    max_capacitor_voltage_rms_v=read_float(
+                        voltage_limit_var,
+                        "Capacitor-voltage limit",
+                    ),
+                    min_load_power_retention=(
+                        read_float(retention_var, "Power-retention limit") / 100.0
+                    ),
+                    max_energy_balance_relative=read_float(
+                        balance_var,
+                        "Energy-balance tolerance",
+                    ),
+                )
+                current_study = analyze_fixed_control_scenarios(
+                    nominal_job,
+                    batch_jobs(),
+                    mapping,
+                    settings,
+                    limits,
+                )
+            except ValueError as exc:
+                current_study = None
+                tree.delete(*tree.get_children())
+                controls_var.set(str(exc))
+                if show_errors:
+                    messagebox.showerror("Circuit study", str(exc), parent=window)
+                return None
+
+            tree.delete(*tree.get_children())
+            for scenario in current_study.scenarios:
+                point = scenario.operating_point
+                tags = [scenario.status]
+                if scenario.job_id == current_study.nominal_job_id:
+                    tags.append("nominal")
+                tree.insert(
+                    "",
+                    "end",
+                    iid=str(scenario.job_id),
+                    values=(
+                        f"#{scenario.job_id}",
+                        scenario.status.title(),
+                        scenario.validation_status.title(),
+                        self._format_number(point.load_ac_w) if point else "—",
+                        f"{point.ac_efficiency * 100.0:.3f}%" if point else "—",
+                        self._format_number(point.max_coil_current_rms_a) if point else "—",
+                        self._format_number(point.max_capacitor_voltage_rms_v) if point else "—",
+                        (
+                            f"{scenario.load_power_retention * 100.0:.2f}%"
+                            if scenario.load_power_retention is not None
+                            else "—"
+                        ),
+                        parameter_summary(scenario.parameters, limit=6),
+                        scenario.message,
+                    ),
+                    tags=tuple(tags),
+                )
+            prepared = current_study.controls
+            controls_var.set(
+                f"Fixed controls: {prepared.frequency_hz / 1000.0:.6g} kHz · "
+                f"C1 {prepared.primary_capacitance_f * 1e9:.6g} nF · "
+                f"C2 {prepared.secondary_capacitance_f * 1e9:.6g} nF · "
+                f"load {prepared.load_ohm:.6g} ohm · source {prepared.source_rms_v:.6g} V RMS · "
+                f"{current_study.passed_count} passed, {current_study.failed_count} failed, "
+                f"{current_study.ineligible_count} ineligible"
+            )
+            return current_study
+
+        def export(extension: str) -> None:
+            study = calculate(show_errors=True)
+            if study is None:
+                return
+            safe_batch = re.sub(r"[^A-Za-z0-9_.-]+", "-", batch_var.get()).strip("-")
+            destination = filedialog.asksaveasfilename(
+                parent=window,
+                title="Export circuit study",
+                initialfile=f"{safe_batch or 'batch'}-circuit-study{extension}",
+                defaultextension=extension,
+                filetypes=[
+                    ("CSV file", "*.csv")
+                    if extension == ".csv"
+                    else ("HTML report", "*.html")
+                ],
+            )
+            if not destination:
+                return
+            try:
+                output = (
+                    write_circuit_study_csv(destination, study)
+                    if extension == ".csv"
+                    else write_circuit_study_html(destination, study)
+                )
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Export circuit study", str(exc), parent=window)
+                return
+            self.activity_var.set(f"Circuit study exported to {output.name}.")
+
+        def open_job(_event: tk.Event | None = None) -> None:
+            selection_ids = tree.selection()
+            if selection_ids:
+                self._show_job(self.store.get(int(selection_ids[0])))
+
+        footer = ttk.Frame(container, style="Card.TFrame")
+        footer.grid(row=7, column=0, sticky="ew", pady=(12, 0))
+        footer.grid_columnconfigure(0, weight=1)
+        ttk.Label(
+            footer,
+            text="Results describe the sinusoidal AC resonant stage, not total charger efficiency.",
+            style="CardText.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        actions = ttk.Frame(footer, style="Card.TFrame")
+        actions.grid(row=0, column=1, sticky="e")
+        ttk.Button(
+            actions,
+            text="Export CSV",
+            style="Secondary.TButton",
+            command=lambda: export(".csv"),
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="Export HTML",
+            style="Secondary.TButton",
+            command=lambda: export(".html"),
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            actions,
+            text="Analyze",
+            style="Primary.TButton",
+            command=lambda: calculate(show_errors=True),
+        ).pack(side="left", padx=(8, 0))
+        batch_combo.bind("<<ComboboxSelected>>", refresh_batch)
+        tree.bind("<Double-1>", open_job)
+        refresh_batch()
 
     def _open_robust_analysis(self) -> None:
         analysis_jobs = self.store.list(limit=5000)

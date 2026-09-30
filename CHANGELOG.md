@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.28.0] - 2026-09-29
+
+### Added
+
+- Native Series-Series WPT circuit workspace for accepted two-port results
+- Automatic mapping for frequency, inductance, mutual-inductance, and resistance metrics
+- Nominal load optimization and source scaling for a requested AC load power
+- Fixed-control screening across gap, offset, tilt, and design scenarios
+- Current, capacitor-voltage, power-retention, and energy-balance limit checks
+- Portable CSV and self-contained HTML circuit-study reports
+- Circuit solver, passivity, validation, stress-screening, and export tests
+- Real COMSOL result dataset with an isolated, repeatable desktop replay example
+- Native screenshots, a worked-example guide, and downloadable circuit reports
+
+### Changed
+
+- WPT roadmap now prioritizes controller envelopes and multi-scenario optimization
+- Package version increased to 0.28.0
+
 ## [0.27.0] - 2026-09-25
 
 ### Added

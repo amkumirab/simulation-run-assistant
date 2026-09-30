@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Series-Series Circuit Study</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; margin: 32px; color: #172630; }
+    p { color: #667681; }
+    .summary { display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; }
+    .summary span { background: #f3f6f8; border-radius: 8px; padding: 8px 12px; }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td { border: 1px solid #dce4e8; padding: 8px; text-align: left; }
+    th { background: #16324a; color: white; position: sticky; top: 0; }
+    tr[data-status="passed"] { background: #e5f6f3; }
+    tr[data-status="failed"], tr[data-status="ineligible"] { background: #feeceb; }
+  </style>
+</head>
+<body>
+  <h1>Series-Series Circuit Study</h1>
+  <p>Fixed nominal compensation and source controls evaluated across accepted FEM jobs.</p>
+  <div class="summary">
+    <span>Nominal Job: #5</span>
+    <span>Target load: 3700 W</span>
+    <span>Load: 0.628093 ohm</span>
+    <span>Source: 49.5431 V RMS</span>
+    <span>C1: 171.055 nF</span>
+    <span>C2: 171.054 nF</span>
+    <span>Current limit: 100 A RMS</span>
+    <span>Capacitor limit: 1200 V RMS</span>
+    <span>Power retention: 80% minimum</span>
+    <span>Energy balance: 1e-08 maximum</span>
+    <span>3 passed</span>
+    <span>2 failed</span>
+    <span>0 ineligible</span>
+  </div>
+  <table>
+    <thead><tr><th>Job</th><th>Status</th><th>Validation</th><th>Power retention</th>
+    <th>Load power (W)</th><th>Efficiency</th><th>Max current (A)</th>
+    <th>Max capacitor voltage (V)</th><th>Energy balance</th><th>Parameters</th>
+    <th>Message</th></tr></thead>
+    <tbody><tr data-status="passed"><td>#5</td><td>passed</td><td>valid</td><td>100%</td><td>3700</td><td>94.62%</td><td>78.931516</td><td>864.004259</td><td>3.27072395e-17</td><td>case=Nominal, gap=150.0[mm], tilt=0.0[deg], xoff=0.0[mm], yoff=0.0[mm]</td><td>Every operating-point check passed.</td></tr><tr data-status="failed"><td>#1</td><td>failed</td><td>valid</td><td>237.849%</td><td>8800.42222</td><td>90.696%</td><td>195.858089</td><td>2143.91199</td><td>1.17164224e-17</td><td>case=Gap 180 mm, gap=180[mm], tilt=0.0[deg], xoff=0.0[mm], yoff=0.0[mm]</td><td>Failed check(s): coil_current, capacitor_voltage</td></tr><tr data-status="failed"><td>#2</td><td>failed</td><td>valid</td><td>176.078%</td><td>6514.87241</td><td>92.4804%</td><td>142.192243</td><td>1556.47211</td><td>2.82417812e-17</td><td>case=Offset 60 mm, gap=150.0[mm], tilt=0.0[deg], xoff=60[mm], yoff=0.0[mm]</td><td>Failed check(s): coil_current, capacitor_voltage</td></tr><tr data-status="passed"><td>#3</td><td>passed</td><td>valid</td><td>100.119%</td><td>3704.39699</td><td>94.6164%</td><td>79.0287942</td><td>865.069091</td><td>5.98897953e-17</td><td>case=Tilt 5 deg, gap=150.0[mm], tilt=5[deg], xoff=0.0[mm], yoff=0.0[mm]</td><td>Every operating-point check passed.</td></tr><tr data-status="passed"><td>#4</td><td>passed</td><td>valid</td><td>115.186%</td><td>4261.87616</td><td>94.2015%</td><td>91.3212141</td><td>999.625016</td><td>4.1776211e-16</td><td>case=Offset 30 mm, gap=150.0[mm], tilt=0.0[deg], xoff=30[mm], yoff=0.0[mm]</td><td>Every operating-point check passed.</td></tr></tbody>
+  </table>
+  <p>This is a sinusoidal AC equivalent. It does not include inverter switching,
+  rectifier, DC/DC, battery, thermal, or hardware-calibration losses.</p>
+</body>
+</html>

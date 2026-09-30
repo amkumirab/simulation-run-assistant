@@ -1,0 +1,229 @@
+{
+  "schema": "wpt.circuit.example.v1",
+  "description": "Stored three-dimensional COMSOL two-port results from a Series-Series WPT screening study. This dataset replays completed simulations; it is not a hardware measurement.",
+  "design_id": "d_61ae6417c6",
+  "geometry": {
+    "inner_radius_mm": 30.64633,
+    "outer_radius_mm": 103.958467,
+    "turns": 10,
+    "ferrite_radius_mm": 124.954166
+  },
+  "nominal_case": "Nominal",
+  "cases": [
+    {
+      "name": "Nominal",
+      "source_sha256": "13a7c02ff76c29c89947efc8de1837bfaa0fd8ca550bd3001b3525c5839c59df",
+      "source_valid": true,
+      "source_checks": {
+        "finite": true,
+        "positive_self_L": true,
+        "coupling_bound": true,
+        "reciprocity": true,
+        "passivity": true,
+        "power_balance": true,
+        "solver_clean": true,
+        "mesh_complete": true,
+        "mesh_quality": true,
+        "frequency_matches": true,
+        "ferrite_active": true
+      },
+      "parameters": {
+        "gap": "150.0[mm]",
+        "xoff": "0.0[mm]",
+        "yoff": "0.0[mm]",
+        "tilt": "0.0[deg]"
+      },
+      "metrics": {
+        "frequency_Hz": 85000,
+        "L1_H": 0.000020495883561574846,
+        "L2_H": 0.00002049595497965312,
+        "M12_H": 0.0000011751820095782733,
+        "M21_H": 0.0000011751820096593055,
+        "M_average_H": 0.0000011751820096187894,
+        "k": 0.05733736526302042,
+        "R1_ohm": 0.012368772385678687,
+        "R2_ohm": 0.012367175208489544,
+        "R12_ohm": 0.0026865630845825453,
+        "R21_ohm": 0.00268656308253,
+        "reciprocity_relative": 6.90297853469066e-11,
+        "power_balance_max_relative": 0.0014268016514023766,
+        "P1_average_W": 0.0061843861928393435,
+        "P2_average_W": 0.006183587604244772,
+        "shield_loss_case1_W": 0.003045777243261001,
+        "shield_loss_case2_W": 0.0030449727251658306
+      }
+    },
+    {
+      "name": "Offset 30 mm",
+      "source_sha256": "18d91157e31eb95e4b23ac58f1a3a5737ef1c1117bae31fb7c7012a12ccf7ac7",
+      "source_valid": true,
+      "source_checks": {
+        "finite": true,
+        "positive_self_L": true,
+        "coupling_bound": true,
+        "reciprocity": true,
+        "passivity": true,
+        "power_balance": true,
+        "solver_clean": true,
+        "mesh_complete": true,
+        "mesh_quality": true,
+        "frequency_matches": true,
+        "ferrite_active": true
+      },
+      "parameters": {
+        "gap": "150.0[mm]",
+        "xoff": "30[mm]",
+        "yoff": "0.0[mm]",
+        "tilt": "0.0[deg]"
+      },
+      "metrics": {
+        "frequency_Hz": 85000,
+        "L1_H": 0.00002050145452116191,
+        "L2_H": 0.00002050146389796459,
+        "M12_H": 0.000001090158278589674,
+        "M21_H": 0.0000010901582785770346,
+        "M_average_H": 0.0000010901582785833544,
+        "k": 0.05317466759023963,
+        "R1_ohm": 0.012365610519438495,
+        "R2_ohm": 0.012369996173817312,
+        "R12_ohm": 0.0025859976643052155,
+        "R21_ohm": 0.0025859976656514676,
+        "reciprocity_relative": 1.1822192208130413e-11,
+        "power_balance_max_relative": 0.0014272149543995624,
+        "P1_average_W": 0.006182805259719247,
+        "P2_average_W": 0.006184998086908656,
+        "shield_loss_case1_W": 0.0030427969160376077,
+        "shield_loss_case2_W": 0.0030449855615424528
+      }
+    },
+    {
+      "name": "Tilt 5 deg",
+      "source_sha256": "23409cb020cc694cd741ab734dbafc3f9fa12397730179bfe6d73d6d8489c982",
+      "source_valid": true,
+      "source_checks": {
+        "finite": true,
+        "positive_self_L": true,
+        "coupling_bound": true,
+        "reciprocity": true,
+        "passivity": true,
+        "power_balance": true,
+        "solver_clean": true,
+        "mesh_complete": true,
+        "mesh_quality": true,
+        "frequency_matches": true,
+        "ferrite_active": true
+      },
+      "parameters": {
+        "gap": "150.0[mm]",
+        "xoff": "0.0[mm]",
+        "yoff": "0.0[mm]",
+        "tilt": "5[deg]"
+      },
+      "metrics": {
+        "frequency_Hz": 85000,
+        "L1_H": 0.000020496170233659514,
+        "L2_H": 0.00002049704595909566,
+        "M12_H": 0.0000011744359479874077,
+        "M21_H": 0.0000011744359479847552,
+        "M_average_H": 0.0000011744359479860814,
+        "k": 0.05729903907669619,
+        "R1_ohm": 0.012374032778763828,
+        "R2_ohm": 0.012368729853514948,
+        "R12_ohm": 0.002688027713879808,
+        "R21_ohm": 0.002688027714096281,
+        "reciprocity_relative": 2.284586539860654e-12,
+        "power_balance_max_relative": 0.0014267627292237598,
+        "P1_average_W": 0.006187016389381914,
+        "P2_average_W": 0.006184364926757474,
+        "shield_loss_case1_W": 0.003048303271379431,
+        "shield_loss_case2_W": 0.0030455989436819863
+      }
+    },
+    {
+      "name": "Offset 60 mm",
+      "source_sha256": "9e693654f8aaa71d9aea3d28af28949b52cbbb50962a370e6f470be8c41ccd35",
+      "source_valid": true,
+      "source_checks": {
+        "finite": true,
+        "positive_self_L": true,
+        "coupling_bound": true,
+        "reciprocity": true,
+        "passivity": true,
+        "power_balance": true,
+        "solver_clean": true,
+        "mesh_complete": true,
+        "mesh_quality": true,
+        "frequency_matches": true,
+        "ferrite_active": true
+      },
+      "parameters": {
+        "gap": "150.0[mm]",
+        "xoff": "60[mm]",
+        "yoff": "0.0[mm]",
+        "tilt": "0.0[deg]"
+      },
+      "metrics": {
+        "frequency_Hz": 85000,
+        "L1_H": 0.000020513649186091807,
+        "L2_H": 0.000020513727526462914,
+        "M12_H": 8.657093218355888e-7,
+        "M21_H": 8.657093218111193e-7,
+        "M_average_H": 8.65709321823354e-7,
+        "k": 0.04220154400269115,
+        "R1_ohm": 0.01235886211650255,
+        "R2_ohm": 0.01235935927525032,
+        "R12_ohm": 0.0022949670321008816,
+        "R21_ohm": 0.002294967033293984,
+        "reciprocity_relative": 2.838232404461816e-11,
+        "power_balance_max_relative": 0.0014284432408936966,
+        "P1_average_W": 0.006179431058251275,
+        "P2_average_W": 0.00617967963762516,
+        "shield_loss_case1_W": 0.003036341352107245,
+        "shield_loss_case2_W": 0.0030365763817819667
+      }
+    },
+    {
+      "name": "Gap 180 mm",
+      "source_sha256": "a1d21b26b152b3de9dc582dec3e1b7ac61d31cf08eb6cbb932a51e8045d57741",
+      "source_valid": true,
+      "source_checks": {
+        "finite": true,
+        "positive_self_L": true,
+        "coupling_bound": true,
+        "reciprocity": true,
+        "passivity": true,
+        "power_balance": true,
+        "solver_clean": true,
+        "mesh_complete": true,
+        "mesh_quality": true,
+        "frequency_matches": true,
+        "ferrite_active": true
+      },
+      "parameters": {
+        "gap": "180[mm]",
+        "xoff": "0.0[mm]",
+        "yoff": "0.0[mm]",
+        "tilt": "0.0[deg]"
+      },
+      "metrics": {
+        "frequency_Hz": 85000,
+        "L1_H": 0.000020497580305787497,
+        "L2_H": 0.000020497606906768687,
+        "M12_H": 7.302774606171747e-7,
+        "M21_H": 7.302774606263754e-7,
+        "M_average_H": 7.30277460621775e-7,
+        "k": 0.03562747289507468,
+        "R1_ohm": 0.012246366267159116,
+        "R2_ohm": 0.012253690041988102,
+        "R12_ohm": 0.0018865894334107766,
+        "R21_ohm": 0.0018865894318073374,
+        "reciprocity_relative": 1.3252472529084818e-11,
+        "power_balance_max_relative": 0.0014381948106765537,
+        "P1_average_W": 0.006123183133579558,
+        "P2_average_W": 0.006126845020994051,
+        "shield_loss_case1_W": 0.0029861102111976667,
+        "shield_loss_case2_W": 0.0029897680565149033
+      }
+    }
+  ]
+}

@@ -13,6 +13,18 @@ Telegram notifications.
 > adapter is a deterministic demo model, not an engineering solver. The COMSOL
 > adapter requires a local installation and compatible licenses.
 
+## See a real WPT example
+
+The native circuit workspace below is running on five stored results from a
+3D COMSOL wireless-power-transfer study. It identifies three electrically
+acceptable scenarios and two that exceed current and capacitor-voltage limits.
+
+![Native WPT circuit analysis using stored COMSOL results](docs/images/wpt-circuit-study.png)
+
+Follow the [worked example](docs/WPT_WORKED_EXAMPLE.md) for screenshots,
+expected results, and a replay command that works without a COMSOL license.
+The shared dataset contains completed simulation outputs, not hardware measurements.
+
 ## Why this project exists
 
 Long simulation sweeps are easy to lose track of: inputs live in separate files,
@@ -46,6 +58,7 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Scientific result validation for bounds, reciprocity, solver diagnostics, and freshness
 - Dry-run artifact retention with pinning, protected reference runs, and cleanup history
 - Resumable 36-state WPT baseline campaigns with readiness and capacity estimates
+- Series-Series WPT operating-point analysis with fixed-control stress screening
 - Multi-objective Pareto fronts with weighted trade-off scoring and portable reports
 - Robust misalignment grouping with coverage gates, worst-case ranking, and heatmaps
 - Reference-model validation with unit-aware pairing and explicit error tolerances
@@ -262,6 +275,16 @@ session. The workspace also estimates sequential runtime and output-model storag
 from recent COMSOL jobs and exports portable CSV or HTML status reports. See
 [`docs/WPT_BASELINE_CAMPAIGN.md`](docs/WPT_BASELINE_CAMPAIGN.md).
 
+Choose **Circuit study** from **Runs** after a batch has produced the complete
+two-port impedance metrics. Select one nominal job, review the automatic result
+mapping, and set target power plus current, capacitor-voltage, power-retention,
+and energy-balance limits. The workspace tunes a Series-Series equivalent at the
+nominal point, then keeps compensation, load, frequency, and source voltage fixed
+while evaluating every scenario in the batch. This reveals electrical stress that
+would be hidden by retuning each offset or gap state. CSV and portable HTML exports
+preserve the results without model paths. See
+[`docs/WPT_CIRCUIT_STUDY.md`](docs/WPT_CIRCUIT_STUDY.md).
+
 Dimensional parameter values are normalized before charting or constraint
 evaluation, so `0.15[m]`, `15[cm]`, and `150[mm]` compare as the same length.
 Unknown units, non-finite values, and incompatible physical dimensions are not
@@ -418,19 +441,21 @@ COMSOL result-pipeline inspection now verifies the links between Study, Dataset,
 Derived Values, Table, and Job Sequence steps before treating outputs as fresh.
 Post-run scientific validation now separates solver completion from result
 acceptance and prevents rejected states from entering design ranking.
-Future increments prioritize trustworthy WPT results before expanding secondary
-interfaces or deployment options:
+The current WPT workflow now includes baseline campaigns, design comparison,
+reference validation, mesh convergence, and fixed-control circuit screening.
+The next increments extend that evidence into a reproducible controller and
+optimization workflow:
 
-1. Run the prepared baseline campaign with the local production IBC model and
-   review its accepted result set.
-2. Run robust grouped analysis across the accepted misalignment states and preserve
-   the strongest complete design groups.
-3. Use the reference-validation workflow to verify selected designs against a
-   higher-fidelity volume model.
-4. Run a mesh convergence study on the retained design candidates and select the
-   lightest level that keeps every required output within tolerance.
-5. Generate a traceable design-decision report from the accepted campaign,
-   robustness, Pareto, and reference-validation evidence.
+1. Build a multi-scenario campaign for every candidate geometry instead of
+   evaluating robustness only after nominal optimization.
+2. Calculate a controller operating envelope and explicit derating rules over
+   gap, offset, and tilt.
+3. Add deterministic mixed continuous/integer design-of-experiments generation
+   with resumable identities.
+4. Rank candidates by robust multi-scenario objectives and constraints rather
+   than nominal performance alone.
+5. Generate a traceable design-decision report from accepted simulation,
+   convergence, circuit, robustness, and reference evidence.
 
 Production and reference MPH files remain local and are never committed to this
 repository.
@@ -465,6 +490,7 @@ src/simulation_assistant/
 |-- storage.py      # SQLite queue and state transitions
 |-- sweeps.py       # Native sweep parsing, estimates, and CSV comparison export
 |-- validation.py   # Scientific result acceptance rules and findings
+|-- wpt_circuit.py  # Series-Series tuning and fixed-control scenario screening
 `-- web.py          # Dependency-free dashboard and JSON API
 ```
 
