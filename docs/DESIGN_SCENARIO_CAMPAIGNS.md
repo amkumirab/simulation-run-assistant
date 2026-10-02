@@ -1,5 +1,9 @@
 # Design Scenario Campaigns
 
+For source-amplitude control after fixed-control screening, open **Power envelope**
+and follow the [operating-envelope guide](OPERATING_ENVELOPES.md). This offline
+analysis preserves each geometry's nominal frequency, compensation and load.
+
 ## Objective and contract
 
 Evaluate several WPT geometries under the same named operating scenarios before

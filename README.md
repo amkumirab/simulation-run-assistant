@@ -31,6 +31,12 @@ geometry uses its own nominal circuit controls, and missing coverage cannot pass
 
 ![Native multi-scenario campaign using stored WPT results](docs/images/wpt-design-results.png)
 
+The [operating-envelope guide](docs/OPERATING_ENVELOPES.md) shows how to calculate
+source-amplitude setpoints, constrained power capacity and derating at those
+samples. It includes a local replay, screenshots and portable CSV/HTML evidence.
+
+![Native WPT source-amplitude envelope](docs/images/wpt-envelope-results.png)
+
 ## Why this project exists
 
 Long simulation sweeps are easy to lose track of: inputs live in separate files,
@@ -67,6 +73,8 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Series-Series WPT operating-point analysis with fixed-control stress screening
 - Resumable multi-design scenario campaigns with independent nominal controls,
   saved configurations, coverage gates, and CSV/HTML engineering evidence
+- Offline source-amplitude envelopes with explicit RMS source/current/capacitor
+  limits, derating, sampled power charts, and incomplete-evidence gates
 - Multi-objective Pareto fronts with weighted trade-off scoring and portable reports
 - Robust misalignment grouping with coverage gates, worst-case ranking, and heatmaps
 - Reference-model validation with unit-aware pairing and explicit error tolerances
@@ -452,11 +460,13 @@ acceptance and prevents rejected states from entering design ranking.
 The current WPT workflow now includes baseline campaigns, design comparison,
 reference validation, mesh convergence, fixed-control circuit screening, and
 resumable named scenario campaigns for multiple candidate geometries.
+Source-amplitude envelopes now calculate constrained modeled power and derating
+at accepted named scenarios; they do not infer a continuous safe operating range.
 The next increments extend that evidence into a reproducible controller and
 optimization workflow:
 
-1. Calculate a controller operating envelope and explicit derating rules over
-   gap, offset, and tilt.
+1. Extend sampled source-amplitude envelopes to validated frequency/load control
+   strategies when the model contract and frequency-dependent evidence support them.
 2. Add deterministic mixed continuous/integer design-of-experiments generation
    with resumable identities.
 3. Rank candidates by robust multi-scenario objectives and constraints rather
@@ -476,6 +486,9 @@ src/simulation_assistant/
 |-- design_campaigns.py # Multi-geometry scenario planning and independent circuit analysis
 |-- design_campaign_reports.py # Saved campaign configurations and evidence reports
 |-- design_campaign_ui.py # Native design/scenario editor and sequential execution
+|-- operating_envelopes.py # Sampled source-amplitude capacity and derating calculations
+|-- envelope_reports.py # Portable, path-free envelope evidence and HTML power charts
+|-- envelope_ui.py # Native offline envelope settings, charts and evidence viewer
 |-- cli.py          # Command-line interface
 |-- desktop.py      # Native Tkinter assistant
 |-- formulas.py     # Safe computed-output expression engine

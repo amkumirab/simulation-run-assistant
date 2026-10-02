@@ -121,7 +121,19 @@ class DesignCampaignDialog:
                                 ("Run / Resume", lambda: self.submit(start=True))):
             ttk.Button(actions, text=label, command=callback,
                        style="Primary.TButton" if label == "Run / Resume" else "Secondary.TButton").pack(side="left", padx=(0, 8))
+        tools = ttk.Frame(self.body, style="Card.TFrame")
+        tools.grid(row=7, column=0, sticky="ew", pady=(8, 0))
+        ttk.Button(tools, text="Power envelope", command=self.open_envelope,
+                   style="Secondary.TButton").pack(side="left")
         self.batch_combo.focus_set()
+
+    def open_envelope(self):
+        if self.preview() is None:
+            return None
+        from simulation_assistant.envelope_ui import OperatingEnvelopeDialog
+        signatures = tuple(state.signature for state in self.plan.campaign.states)
+        return OperatingEnvelopeDialog(self.window, self.report,
+                                       lambda: self.app.store.list_by_run_signatures(signatures))
 
     def _build_setup(self, parent):
         parent.columnconfigure(0, weight=1)

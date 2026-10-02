@@ -14,3 +14,12 @@ classifier), accidental expensive solves (test only isolated databases).
 
 No model changes, new dependencies, remote publication or actual COMSOL solves
 are included. Tasks are tracked in `tasks/todo.md`.
+
+## Next increment: operating envelopes
+
+Implement `docs/OPERATING_ENVELOPES.md` without changing the completed campaign
+workflow. First verify source-amplitude ceilings and failure isolation, then
+portable evidence reports, then the native offline dialog and stored-data replay.
+Retain separate scientific coverage and electrical feasibility. Rebuild identity
+and acceptance from current jobs; incomplete coverage must not yield a global
+power claim. No live COMSOL solves, new dependencies or remote publication.

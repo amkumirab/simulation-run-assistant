@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.30.0] - 2026-10-02
+
+### Added
+
+- Native offline WPT operating envelopes opened from Design Scenario Campaigns
+- Source-amplitude recommendations with fixed per-geometry frequency, compensation and load
+- Independent source, primary/secondary coil-current and capacitor-voltage RMS ceilings
+- Explicit target-met, derated and unavailable results with minimum target-retention checks
+- Current-evidence identity checks, nominal failure isolation and incomplete-coverage summaries
+- Sampled power-capacity charts and portable CSV/HTML evidence with every binding constraint
+- Stored COMSOL replay, genuine native screenshots and a complete operating-envelope guide
+- Numerical, eligibility, export and native workflow regression tests
+
+### Changed
+
+- Package version increased to 0.30.0
+- The WPT roadmap distinguishes sampled envelopes from future adaptive control strategies
+
 ## [0.29.0] - 2026-10-01
 
 ### Added
