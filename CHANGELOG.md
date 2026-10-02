@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.29.0] - 2026-10-01
+
+### Added
+
+- Native Design Scenario Campaign workspace for multiple accepted WPT geometries
+- Named gap, offset and tilt rows with per-design nominal input inheritance
+- Reusable accepted states, retryable failures and resumable queued execution
+- Independent nominal circuit tuning and explicit scenario coverage for each design
+- Saved campaign configurations with model/contract/formula identity checks
+- Portable CSV and self-contained HTML evidence with controls, inputs and checks
+- Stored real-result replay, native screenshots and a step-by-step campaign guide
+- Isolated native UI checks for editing, restart, readiness, deduplication and pause/resume
+
+### Changed
+
+- The Runs workspace provides a dedicated Design scenarios action
+- The WPT roadmap advances to controller envelopes and multi-scenario objectives
+- Package version increased to 0.29.0
+
 ## [0.28.0] - 2026-09-29
 
 ### Added

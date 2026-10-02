@@ -25,6 +25,12 @@ Follow the [worked example](docs/WPT_WORKED_EXAMPLE.md) for screenshots,
 expected results, and a replay command that works without a COMSOL license.
 The shared dataset contains completed simulation outputs, not hardware measurements.
 
+The [Design Scenario Campaign guide](docs/DESIGN_SCENARIO_CAMPAIGNS.md) shows
+how to compare several geometries with named gap, offset and tilt cases. Each
+geometry uses its own nominal circuit controls, and missing coverage cannot pass.
+
+![Native multi-scenario campaign using stored WPT results](docs/images/wpt-design-results.png)
+
 ## Why this project exists
 
 Long simulation sweeps are easy to lose track of: inputs live in separate files,
@@ -59,6 +65,8 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Dry-run artifact retention with pinning, protected reference runs, and cleanup history
 - Resumable 36-state WPT baseline campaigns with readiness and capacity estimates
 - Series-Series WPT operating-point analysis with fixed-control stress screening
+- Resumable multi-design scenario campaigns with independent nominal controls,
+  saved configurations, coverage gates, and CSV/HTML engineering evidence
 - Multi-objective Pareto fronts with weighted trade-off scoring and portable reports
 - Robust misalignment grouping with coverage gates, worst-case ranking, and heatmaps
 - Reference-model validation with unit-aware pairing and explicit error tolerances
@@ -442,19 +450,18 @@ Derived Values, Table, and Job Sequence steps before treating outputs as fresh.
 Post-run scientific validation now separates solver completion from result
 acceptance and prevents rejected states from entering design ranking.
 The current WPT workflow now includes baseline campaigns, design comparison,
-reference validation, mesh convergence, and fixed-control circuit screening.
+reference validation, mesh convergence, fixed-control circuit screening, and
+resumable named scenario campaigns for multiple candidate geometries.
 The next increments extend that evidence into a reproducible controller and
 optimization workflow:
 
-1. Build a multi-scenario campaign for every candidate geometry instead of
-   evaluating robustness only after nominal optimization.
-2. Calculate a controller operating envelope and explicit derating rules over
+1. Calculate a controller operating envelope and explicit derating rules over
    gap, offset, and tilt.
-3. Add deterministic mixed continuous/integer design-of-experiments generation
+2. Add deterministic mixed continuous/integer design-of-experiments generation
    with resumable identities.
-4. Rank candidates by robust multi-scenario objectives and constraints rather
+3. Rank candidates by robust multi-scenario objectives and constraints rather
    than nominal performance alone.
-5. Generate a traceable design-decision report from accepted simulation,
+4. Generate a traceable design-decision report from accepted simulation,
    convergence, circuit, robustness, and reference evidence.
 
 Production and reference MPH files remain local and are never committed to this
@@ -466,6 +473,9 @@ repository.
 src/simulation_assistant/
 |-- adapters/       # Solver boundary, mock model, COMSOL batch adapter
 |-- campaigns.py    # Resumable WPT campaign planning and portable reports
+|-- design_campaigns.py # Multi-geometry scenario planning and independent circuit analysis
+|-- design_campaign_reports.py # Saved campaign configurations and evidence reports
+|-- design_campaign_ui.py # Native design/scenario editor and sequential execution
 |-- cli.py          # Command-line interface
 |-- desktop.py      # Native Tkinter assistant
 |-- formulas.py     # Safe computed-output expression engine

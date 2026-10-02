@@ -962,6 +962,20 @@ class DesktopApp:
             command=self.refresh_jobs,
         ).pack(side="left", padx=(8, 0))
 
+        design_controls = ttk.Frame(toolbar, style="Card.TFrame")
+        design_controls.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(
+            design_controls,
+            text="Design scenarios",
+            style="Secondary.TButton",
+            command=self._open_design_campaign,
+        ).pack(side="left")
+        ttk.Label(
+            design_controls,
+            text="Compare multiple geometries under the same named WPT scenarios.",
+            style="CardText.TLabel",
+        ).pack(side="left", padx=12)
+
         self.jobs_tree = ttk.Treeview(
             card,
             columns=(
@@ -1291,6 +1305,11 @@ class DesktopApp:
         ).pack(side="right")
         refresh_history()
         scan()
+
+    def _open_design_campaign(self) -> None:
+        from simulation_assistant.design_campaign_ui import DesignCampaignDialog
+
+        DesignCampaignDialog(self)
 
     def _open_wpt_campaign(self) -> None:
         window = tk.Toplevel(self.root)
