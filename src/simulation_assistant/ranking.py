@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from simulation_assistant.quantities import parse_quantity, reference_unit
+from simulation_assistant.csv_export import safe_csv_cell
 from simulation_assistant.types import Job, JobStatus
 
 
@@ -233,10 +234,9 @@ def write_ranking_csv(path: str | Path, result: RankingResult) -> Path:
     ]
     with output_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
+        writer.writerow({name: safe_csv_cell(name) for name in fieldnames})
         for row in result.rows:
-            writer.writerow(
-                {
+            writer.writerow({key: safe_csv_cell(value) for key, value in {
                     "rank": row.rank,
                     "job_id": row.job_id,
                     "batch_name": row.batch_name,
@@ -252,8 +252,7 @@ def write_ranking_csv(path: str | Path, result: RankingResult) -> Path:
                         for name in constraint_names
                     },
                     "finished_at": row.finished_at,
-                }
-            )
+                }.items()})
     return output_path
 
 

@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.31.0] - 2026-10-08
+
+### Added
+
+- Native Sweep workspace with searchable batch summaries and paginated run history
+- All-status job counts and direct access to existing run details and controls
+- Complete batch-scoped numeric comparison/ranking independent of visible pages
+- Bounded chart overview markers with explicit sampling labels and preserved extrema
+- Isolated 10,000-record stress check, stored WPT replay and genuine native screenshots
+- Two copied-model live COMSOL gap tests with source-hash preservation evidence
+
+### Fixed
+
+- Old sweeps and best results disappearing behind the latest 500 successful jobs
+- Pending-only batch selections falling back to unrelated successful results
+- Batch names colliding with the aggregate comparison selector
+- Unreadable selected-table text and stale ranking rows after invalid constraints
+- Spreadsheet formula execution from textual comparison/ranking cells and headers
+- Comparison input names overwriting reserved CSV result columns
+
+### Changed
+
+- Package version increased to 0.31.0; no new runtime dependencies
+- Table pagination affects rendering only; numeric exports retain all matching rows
+- Existing solver submission limits, global queue controls and specialized scientific
+  analysis windows are unchanged
+
 ## [0.30.0] - 2026-10-02
 
 ### Added

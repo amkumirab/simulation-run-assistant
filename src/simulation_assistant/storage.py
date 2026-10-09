@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Generic, Iterable, Iterator, TypeVar
 
 from simulation_assistant.formulas import validate_output_formulas
 from simulation_assistant.preflight import build_run_signature
@@ -14,6 +15,23 @@ from simulation_assistant.types import Job, JobStatus
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class Page(Generic[T]):
+    items: tuple[T, ...]
+    total: int
+    offset: int
+
+
+@dataclass(frozen=True)
+class BatchSummary:
+    batch_name: str
+    total: int
+    counts: dict[str, int]
 
 
 class JobStore:
@@ -627,6 +645,97 @@ class JobStore:
                     (status.value, limit),
                 ).fetchall()
         return [self._to_job(row) for row in rows]
+
+    @staticmethod
+    def _page_bounds(limit: int, offset: int = 0) -> None:
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError("Page size must be an integer between 1 and 500")
+        if type(offset) is not int or offset < 0:
+            raise ValueError("Page offset must be a non-negative integer")
+
+    @staticmethod
+    def _job_filter(
+        batch_name: str | None, status: JobStatus | None, search: str = ""
+    ) -> tuple[str, list[Any]]:
+        clauses: list[str] = []
+        values: list[Any] = []
+        if batch_name is not None:
+            clauses.append("batch_name = ?")
+            values.append(batch_name)
+        if status is not None:
+            clauses.append("status = ?")
+            values.append(status.value)
+        if search:
+            clauses.append(
+                "(instr(lower(batch_name), lower(?)) > 0 OR "
+                "instr(CAST(id AS TEXT), ?) > 0 OR "
+                "instr(lower(parameters), lower(?)) > 0)"
+            )
+            values.extend([search, search, search])
+        return (" WHERE " + " AND ".join(clauses) if clauses else ""), values
+
+    def page_jobs(
+        self, *, batch_name: str | None = None, status: JobStatus | None = None,
+        search: str = "", limit: int = 100, offset: int = 0,
+    ) -> Page[Job]:
+        """Filter before paging; count and rows share one SQLite read snapshot."""
+        self._page_bounds(limit, offset)
+        where, values = self._job_filter(batch_name, status, search)
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            total = connection.execute("SELECT COUNT(*) FROM jobs" + where, values).fetchone()[0]
+            rows = connection.execute(
+                "SELECT * FROM jobs" + where + " ORDER BY id DESC LIMIT ? OFFSET ?",
+                [*values, limit, offset],
+            ).fetchall()
+        return Page(tuple(self._to_job(row) for row in rows), total, offset)
+
+    def iter_jobs(
+        self, *, batch_name: str | None = None, status: JobStatus | None = None,
+        fetch_size: int = 256,
+    ) -> Iterator[Job]:
+        """Read all matching jobs in chunks, without a recent-history cutoff.
+
+        The cursor is a read snapshot. Exhaust or close the iterator to release it.
+        """
+        self._page_bounds(fetch_size)
+        where, values = self._job_filter(batch_name, status)
+        with self._connect() as connection:
+            cursor = connection.execute("SELECT * FROM jobs" + where + " ORDER BY id DESC", values)
+            while rows := cursor.fetchmany(fetch_size):
+                for row in rows:
+                    yield self._to_job(row)
+
+    def batch_names(self, *, status: JobStatus | None = None) -> list[str]:
+        where, values = self._job_filter(None, status)
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT batch_name FROM jobs" + where +
+                " GROUP BY batch_name ORDER BY MAX(id) DESC, batch_name", values,
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
+    def page_batches(
+        self, *, search: str = "", limit: int = 30, offset: int = 0,
+    ) -> Page[BatchSummary]:
+        self._page_bounds(limit, offset)
+        where = " WHERE instr(lower(batch_name), lower(?)) > 0" if search else ""
+        values = [search] if search else []
+        # Enum values, not user input, supply the fixed status aggregation columns.
+        counts = ", ".join(f"SUM(status = '{status.value}') AS {status.value}" for status in JobStatus)
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            total = connection.execute(
+                "SELECT COUNT(DISTINCT batch_name) FROM jobs" + where, values,
+            ).fetchone()[0]
+            rows = connection.execute(
+                "SELECT batch_name, COUNT(*) AS total, " + counts + " FROM jobs" + where +
+                " GROUP BY batch_name ORDER BY MAX(id) DESC, batch_name LIMIT ? OFFSET ?",
+                [*values, limit, offset],
+            ).fetchall()
+        return Page(tuple(BatchSummary(str(row["batch_name"]), int(row["total"]),
+                    {status.value: int(row[status.value]) for status in JobStatus})
+                    for row in rows), total, offset)
 
     def list_by_run_signatures(self, signatures: Iterable[str]) -> list[Job]:
         unique = tuple(dict.fromkeys(str(signature) for signature in signatures))

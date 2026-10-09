@@ -11,6 +11,8 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any, Callable
 
 from simulation_assistant.adapters import ComsolAdapter, MockElectromagneticAdapter
+from simulation_assistant.table_paging import TablePager
+from simulation_assistant.sweep_workspace import SweepWorkspaceDialog
 from simulation_assistant.adapters.comsol import (
     ComsolConfig,
     check_comsol,
@@ -117,6 +119,7 @@ from simulation_assistant.sweeps import (
     comparison_rows,
     estimate_sequential_seconds,
     parse_sweep_values,
+    sample_comparison_points,
     write_comparison_csv,
 )
 from simulation_assistant.types import Job, JobStatus
@@ -340,7 +343,8 @@ class DesktopApp:
             font=("Segoe UI Semibold", 8),
             padding=8,
         )
-        style.map("Treeview", background=[("selected", COLORS["blue_soft"])])
+        style.map("Treeview", background=[("selected", COLORS["blue_soft"])],
+                  foreground=[("selected", COLORS["ink"])])
         style.configure("TNotebook", background=COLORS["canvas"], borderwidth=0)
         style.configure(
             "TNotebook.Tab",
@@ -897,7 +901,7 @@ class DesktopApp:
         toolbar = ttk.Frame(card, style="Card.TFrame")
         toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         toolbar.grid_columnconfigure(0, weight=1)
-        ttk.Label(toolbar, text="Local run queue", style="CardTitle.TLabel").grid(
+        ttk.Label(toolbar, text="Recent run queue (latest 100)", style="CardTitle.TLabel").grid(
             row=0, column=0, sticky="w"
         )
         ttk.Label(
@@ -975,6 +979,8 @@ class DesktopApp:
             text="Compare multiple geometries under the same named WPT scenarios.",
             style="CardText.TLabel",
         ).pack(side="left", padx=12)
+        ttk.Button(design_controls, text="Sweep workspace", style="Secondary.TButton",
+                   command=self._open_sweep_workspace).pack(side="left")
 
         self.jobs_tree = ttk.Treeview(
             card,
@@ -2504,6 +2510,11 @@ class DesktopApp:
                 stretch=column in {"batch", "parameters"},
             )
         self.compare_tree.grid(row=2, column=0, sticky="nsew")
+        compare_scroll = ttk.Scrollbar(card, orient="vertical", command=self.compare_tree.yview)
+        compare_scroll.grid(row=2, column=1, sticky="ns")
+        self.compare_tree.configure(yscrollcommand=compare_scroll.set)
+        self.compare_pager = TablePager(card, self._render_comparison_page)
+        self.compare_pager.grid(row=3, column=0, sticky="ew")
 
     def _build_ranking(self, parent: ttk.Frame) -> None:
         parent.grid_columnconfigure(0, weight=1)
@@ -2678,7 +2689,12 @@ class DesktopApp:
                 stretch=column in {"constraints", "parameters"},
             )
         self.ranking_tree.grid(row=1, column=0, sticky="nsew")
+        ranking_scroll = ttk.Scrollbar(results, orient="vertical", command=self.ranking_tree.yview)
+        ranking_scroll.grid(row=1, column=1, sticky="ns")
+        self.ranking_tree.configure(yscrollcommand=ranking_scroll.set)
         self.ranking_tree.bind("<Double-1>", self._open_ranked_job)
+        self.ranking_pager = TablePager(results, self._render_ranking_page)
+        self.ranking_pager.grid(row=2, column=0, sticky="ew")
 
     def _field_label(self, parent: ttk.Frame, text: str, row: int, column: int) -> None:
         ttk.Label(parent, text=text, style="Field.TLabel").grid(
@@ -4836,8 +4852,7 @@ class DesktopApp:
     def _refresh_ranking_options(self) -> None:
         if not hasattr(self, "ranking_batch"):
             return
-        successful_jobs = self.store.list(status=JobStatus.SUCCEEDED, limit=500)
-        batches = list(dict.fromkeys(job.batch_name for job in successful_jobs))
+        batches = self.store.batch_names()
         self.ranking_batch.configure(values=batches)
         if not batches:
             self.ranking_batch_var.set("")
@@ -4847,12 +4862,13 @@ class DesktopApp:
             self.ranking_field_dimensions = {}
             self.current_ranking_result = None
             self.ranking_tree.delete(*self.ranking_tree.get_children())
+            self.ranking_pager.set_total(0, reset=True)
             self.ranking_summary_var.set("No successful runs are available to rank.")
             return
         if self.ranking_batch_var.get() not in batches:
             self.ranking_batch_var.set(batches[0])
         batch_name = self.ranking_batch_var.get()
-        batch_jobs = [job for job in successful_jobs if job.batch_name == batch_name]
+        batch_jobs = self.store.iter_jobs(status=JobStatus.SUCCEEDED, batch_name=batch_name)
         rankable_batch_jobs = [
             job
             for job in batch_jobs
@@ -4977,6 +4993,7 @@ class DesktopApp:
         if not batch_name or not objective:
             self.current_ranking_result = None
             self.ranking_tree.delete(*self.ranking_tree.get_children())
+            self.ranking_pager.set_total(0, reset=True)
             self.ranking_summary_var.set(
                 "Choose a completed batch and numeric output objective."
             )
@@ -4984,7 +5001,7 @@ class DesktopApp:
         try:
             constraints = self._collect_ranking_constraints()
             result = rank_sweep_results(
-                self.store.list(status=JobStatus.SUCCEEDED, limit=500),
+                self.store.iter_jobs(status=JobStatus.SUCCEEDED, batch_name=batch_name),
                 objective,
                 direction=self.ranking_direction_var.get().casefold(),
                 constraints=constraints,
@@ -4992,10 +5009,11 @@ class DesktopApp:
             )
         except ValueError as exc:
             self.current_ranking_result = None
+            self.ranking_tree.delete(*self.ranking_tree.get_children())
+            self.ranking_pager.set_total(0, reset=True)
+            self.ranking_summary_var.set(str(exc))
             if show_errors:
                 messagebox.showerror("Rank results", str(exc), parent=self.root)
-            else:
-                self.ranking_summary_var.set(str(exc))
             return
 
         self.current_ranking_result = result
@@ -5016,8 +5034,17 @@ class DesktopApp:
                 f"{result.validation_rejected_jobs} validation rejected · "
                 f"{result.missing_values} missing"
             )
-        constraint_labels = {constraint.key: constraint for constraint in constraints}
-        for row in result.rows[:100]:
+        self.ranking_pager.set_total(len(result.rows), reset=True)
+        self._render_ranking_page()
+
+    def _render_ranking_page(self) -> None:
+        self.ranking_tree.delete(*self.ranking_tree.get_children())
+        result = self.current_ranking_result
+        if result is None:
+            return
+        constraint_labels = {constraint.key: constraint for constraint in result.constraints}
+        offset = self.ranking_pager.offset
+        for row in result.rows[offset:offset + self.ranking_pager.page_size]:
             parameter_text = ", ".join(
                 f"{name}={value}"
                 for name, value in list(row.parameters.items())[:8]
@@ -7232,23 +7259,23 @@ class DesktopApp:
     def refresh_comparison(self) -> None:
         if not hasattr(self, "compare_metric"):
             return
-        successful_jobs = self.store.list(status=JobStatus.SUCCEEDED, limit=500)
-        batches = sorted({job.batch_name for job in successful_jobs})
-        self.compare_batch.configure(values=["All batches", *batches])
-        if self.compare_batch_var.get() not in {"All batches", *batches}:
-            self.compare_batch_var.set("All batches")
         selected_batch = self._selected_comparison_batch()
-        filtered_jobs = [
-            job
-            for job in successful_jobs
-            if selected_batch is None or job.batch_name == selected_batch
-        ]
+        batches = self.store.batch_names()
+        self._all_batches_label = "All batches"
+        while self._all_batches_label in batches:
+            self._all_batches_label += " (combined)"
+        self.compare_batch.configure(values=[self._all_batches_label, *batches])
+        self.compare_batch_var.set(selected_batch if selected_batch in batches else self._all_batches_label)
+        selected_batch = self._selected_comparison_batch()
+        filtered_jobs = self.store.iter_jobs(status=JobStatus.SUCCEEDED, batch_name=selected_batch)
         metric_names: set[str] = set()
         parameter_names: set[str] = set()
+        formula_names: set[str] = set()
         for job in filtered_jobs:
             metrics = (job.result or {}).get("metrics", {})
             metric_names.update(str(name) for name in metrics)
             parameter_names.update(str(name) for name in job.parameters)
+            formula_names.update(job.output_formulas)
         values = sorted(metric_names)
         self.compare_metric.configure(values=values)
         x_values = ["Job ID", *sorted(parameter_names)]
@@ -7256,12 +7283,7 @@ class DesktopApp:
         if self.compare_x_var.get() not in x_values:
             self.compare_x_var.set(x_values[1] if len(x_values) > 1 else "Job ID")
         if self.compare_metric_var.get() not in values:
-            formula_names = {
-                name
-                for job in filtered_jobs
-                for name in job.output_formulas
-                if name in values
-            }
+            formula_names.intersection_update(values)
             selected = sorted(formula_names)[0] if formula_names else (values[0] if values else "")
             self.compare_metric_var.set(selected)
         self._refresh_comparison_rows()
@@ -7269,7 +7291,7 @@ class DesktopApp:
 
     def _selected_comparison_batch(self) -> str | None:
         selected = self.compare_batch_var.get()
-        return None if selected == "All batches" else selected
+        return None if selected == getattr(self, "_all_batches_label", "All batches") else selected
 
     def _comparison_filter_changed(self, _event: tk.Event | None = None) -> None:
         self.refresh_comparison()
@@ -7281,10 +7303,11 @@ class DesktopApp:
         metric = self.compare_metric_var.get()
         if not metric:
             self.current_comparison_rows = []
+            self.compare_pager.set_total(0, reset=True)
             self.compare_best_var.set("Choose an output metric to compare runs.")
             self._draw_comparison_chart()
             return
-        jobs = self.store.list(status=JobStatus.SUCCEEDED, limit=500)
+        jobs = self.store.iter_jobs(status=JobStatus.SUCCEEDED, batch_name=self._selected_comparison_batch())
         rows = comparison_rows(
             jobs,
             metric,
@@ -7299,7 +7322,16 @@ class DesktopApp:
             )
         else:
             self.compare_best_var.set("No successful runs contain the selected output.")
-        for row in rows:
+        self.compare_pager.set_total(len(rows), reset=True)
+        self._render_comparison_page()
+        self._draw_comparison_chart()
+
+    def _render_comparison_page(self) -> None:
+        self.compare_tree.delete(*self.compare_tree.get_children())
+        rows = self.current_comparison_rows
+        best_row = max(rows, key=lambda row: row["value"]) if rows else None
+        offset = self.compare_pager.offset
+        for row in rows[offset:offset + self.compare_pager.page_size]:
             parameters = ", ".join(
                 f"{name}={value}"
                 for name, value in list(dict(row["parameters"]).items())[:8]
@@ -7318,7 +7350,21 @@ class DesktopApp:
             if best_row and row["job_id"] == best_row["job_id"]:
                 self.compare_tree.item(item, tags=("best",))
         self.compare_tree.tag_configure("best", background=COLORS["teal_soft"])
-        self._draw_comparison_chart()
+
+    def _open_sweep_workspace(self) -> None:
+        SweepWorkspaceDialog(self.root, self.store, self._show_job,
+                             self._compare_workspace_batch, self._rank_workspace_batch)
+
+    def _compare_workspace_batch(self, batch_name: str) -> None:
+        self.refresh_comparison()
+        self.compare_batch_var.set(batch_name)
+        self.refresh_comparison()
+        self.notebook.select(2)
+
+    def _rank_workspace_batch(self, batch_name: str) -> None:
+        self.ranking_batch_var.set(batch_name)
+        self._refresh_ranking_options()
+        self.notebook.select(3)
 
     def _draw_comparison_chart(self) -> None:
         if not hasattr(self, "compare_chart"):
@@ -7391,8 +7437,13 @@ class DesktopApp:
 
         canvas.create_line(left, top, left, bottom, fill="#aab8c0")
         canvas.create_line(left, bottom, right, bottom, fill="#aab8c0")
-        projected = [(project_x(x), project_y(y), job_id) for x, y, job_id in points]
-        if len(projected) > 1 and len(set(x_values)) == len(x_values):
+        chart_points = sample_comparison_points(points)
+        projected = [(project_x(x), project_y(y), job_id) for x, y, job_id in chart_points]
+        sampled = len(chart_points) < len(points)
+        if sampled:
+            canvas.create_text(right, top, anchor="ne", fill=COLORS["muted"],
+                               text=f"Sampled overview: {len(chart_points):,}/{len(points):,} points. Full rows in CSV.")
+        if not sampled and len(projected) > 1 and len(set(x_values)) == len(x_values):
             line_coordinates = [coordinate for point in projected for coordinate in point[:2]]
             canvas.create_line(*line_coordinates, fill=COLORS["blue"], width=2)
         best_job_id = max(rows, key=lambda row: row["value"])["job_id"]
@@ -7411,7 +7462,7 @@ class DesktopApp:
         canvas.create_text(
             left,
             bottom + 18,
-            text=self._format_number(x_min),
+            text=f"{x_min:.4g}",
             anchor="w",
             fill=COLORS["muted"],
             font=("Segoe UI", 8),
@@ -7419,7 +7470,7 @@ class DesktopApp:
         canvas.create_text(
             right,
             bottom + 18,
-            text=self._format_number(x_max),
+            text=f"{x_max:.4g}",
             anchor="e",
             fill=COLORS["muted"],
             font=("Segoe UI", 8),
@@ -7437,7 +7488,7 @@ class DesktopApp:
         canvas.create_text(
             left - 8,
             top,
-            text=self._format_number(y_max),
+            text=f"{y_max:.4g}",
             anchor="e",
             fill=COLORS["muted"],
             font=("Segoe UI", 8),
@@ -7445,7 +7496,7 @@ class DesktopApp:
         canvas.create_text(
             left - 8,
             bottom,
-            text=self._format_number(y_min),
+            text=f"{y_min:.4g}",
             anchor="e",
             fill=COLORS["muted"],
             font=("Segoe UI", 8),

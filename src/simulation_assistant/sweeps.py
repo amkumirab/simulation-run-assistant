@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from simulation_assistant.quantities import numeric_quantity_value
+from simulation_assistant.csv_export import safe_csv_cell
 from simulation_assistant.types import Job, JobStatus
 
 
@@ -175,6 +176,25 @@ def comparison_rows(
     return rows
 
 
+def sample_comparison_points(
+    points: list[tuple[float, float, int]], *, limit: int = 1000,
+) -> list[tuple[float, float, int]]:
+    """Bound overview markers while preserving endpoints and y extrema.
+
+    Points must already be sorted by x. Sampling never changes analytical rows.
+    """
+    if type(limit) is not int or limit < 4:
+        raise ValueError("Chart point limit must be an integer of at least four")
+    if len(points) <= limit:
+        return points
+    indices = {0, len(points) - 1,
+               max(range(len(points)), key=lambda index: points[index][1]),
+               min(range(len(points)), key=lambda index: points[index][1])}
+    slots = limit - 4
+    indices.update((index + 1) * (len(points) - 1) // (slots + 1) for index in range(slots))
+    return [points[index] for index in sorted(indices)]
+
+
 def write_comparison_csv(path: str | Path, rows: Iterable[Mapping[str, Any]]) -> Path:
     records = list(rows)
     if not records:
@@ -188,27 +208,33 @@ def write_comparison_csv(path: str | Path, rows: Iterable[Mapping[str, Any]]) ->
     )
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    used_columns = {"job_id", "batch_name", "metric", "value", "finished_at"}
+    parameter_columns: dict[str, str] = {}
+    for name in parameter_names:
+        column = safe_csv_cell(name)
+        while column in used_columns:
+            column = "input:" + column
+        parameter_columns[name] = column
+        used_columns.add(column)
     fieldnames = [
         "job_id",
         "batch_name",
-        *parameter_names,
+        *parameter_columns.values(),
         "metric",
         "value",
         "finished_at",
     ]
     with output_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
+        writer.writerow({name: safe_csv_cell(name) for name in fieldnames})
         for row in records:
             parameters = dict(row.get("parameters", {}))
-            writer.writerow(
-                {
+            writer.writerow({key: safe_csv_cell(value) for key, value in {
                     "job_id": row.get("job_id", ""),
                     "batch_name": row.get("batch_name", ""),
-                    **{name: parameters.get(name, "") for name in parameter_names},
+                    **{column: parameters.get(name, "") for name, column in parameter_columns.items()},
                     "metric": row.get("metric", ""),
                     "value": row.get("value", ""),
                     "finished_at": row.get("finished_at", ""),
-                }
-            )
+                }.items()})
     return output_path
