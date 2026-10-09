@@ -41,3 +41,23 @@ browser console warnings/errors; its 320-pixel layout contained horizontal table
 scrolling without document overflow. The 0.30.0 wheel built successfully and
 contained all six campaign/envelope modules. Compilation and diff checks passed.
 No live COMSOL solve, production queue/model mutation, commit or push was performed.
+
+## Scalable sweep workspace tasks
+
+- [x] Add tested full-scope queries, batch summaries and paginated history.
+- [x] Add native workspace and complete comparison/ranking with table paging.
+- [x] Verify exports, keyboard navigation and large isolated history.
+- [x] Inspect user models read-only and record honest COMSOL test evidence.
+- [x] Update English documentation, review regressions and build the package.
+
+Verification on 2026-10-08: all 237 tests passed on Python 3.12, including
+15 new full-history, export and native UI checks. The native workflow passed
+with five stored WPT results and separately with two new copied-model COMSOL
+gap solves, each behind 10,000 newer synthetic records. Exports retained every
+matching result; minimum and normal layouts and Enter-to-open details passed.
+Four genuine native captures were recorded and reviewed. The 0.31.0 wheel
+built and contained the new paging, sweep workspace and CSV helper modules.
+Compilation, diff and changed-file language/attribution/token-pattern checks
+passed. Source-model SHA-256 remained unchanged. No production queue mutation,
+commit or push was performed. Tk tests skip only when no desktop is available;
+the database and logic tests do not need a display or COMSOL license.

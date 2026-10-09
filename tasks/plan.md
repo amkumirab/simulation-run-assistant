@@ -23,3 +23,14 @@ portable evidence reports, then the native offline dialog and stored-data replay
 Retain separate scientific coverage and electrical feasibility. Rebuild identity
 and acceptance from current jobs; incomplete coverage must not yield a global
 power claim. No live COMSOL solves, new dependencies or remote publication.
+
+## Scalable sweep workspace (0.31.0)
+
+Approved scope: complete batch-scoped numeric comparison and ranking, paginated
+native history and status summaries. No model mutation or new solver scheduling.
+See `docs/SCALABLE_SWEEP_WORKSPACE.md` for acceptance and limits.
+
+1. Prove full-history reads and bounded pages with isolated database tests.
+2. Add a native sweep workspace and bounded analysis table navigation.
+3. Verify large-history exports and stored/live COMSOL evidence separately.
+4. Document, review, test and build; leave changes uncommitted for review.

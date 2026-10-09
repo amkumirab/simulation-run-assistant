@@ -37,6 +37,14 @@ samples. It includes a local replay, screenshots and portable CSV/HTML evidence.
 
 ![Native WPT source-amplitude envelope](docs/images/wpt-envelope-results.png)
 
+The [scalable sweep workspace guide](docs/SCALABLE_SWEEP_WORKSPACE.md) shows
+complete batch history, status counts and paginated native tables. Numeric
+comparison, ranking and CSV export no longer stop at the latest 500 results.
+The checks include two new copied-model COMSOL solves and a separate 10,000-job
+synthetic history test; synthetic records are never presented as physics data.
+
+![Native sweep workspace with two new COMSOL gap solves](docs/images/sweep-workspace-live/sweep-workspace.png)
+
 ## Why this project exists
 
 Long simulation sweeps are easy to lose track of: inputs live in separate files,
@@ -63,6 +71,8 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Duplicate-run preflight with reusable-result detection and new-job-only estimates
 - Safe custom output formulas and comparison across successful simulation states
 - Batch-filtered comparison charts, highest-value highlighting, and CSV export
+- Complete searchable sweep history with grouped status counts, paginated tables
+  and full-batch numeric comparison/ranking exports
 - Constrained sweep ranking with maximize/minimize objectives and CSV export
 - Unit-aware parameter comparison with SI normalization and dimension checks
 - Versioned COMSOL model contracts with pre-run compatibility and limit checks
