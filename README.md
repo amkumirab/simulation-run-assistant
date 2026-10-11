@@ -461,6 +461,13 @@ ordered mesh levels, convergence rules, and report interpretation.
 
 ## Scientific roadmap
 
+For bounded input exploration, open **Runs > Experiment planner** in the native
+app. Configure continuous quantities and integer counts, choose a state budget
+and seed, inspect the exact points, then save or explicitly queue/run them.
+Accepted and active matching jobs are reused. See the
+[experiment planner guide](docs/EXPERIMENT_PLANNER.md) for setup, resume rules,
+limits and separate stored-result/unsolved examples.
+
 Versioned WPT model contracts now define visible design inputs, protected
 internal parameters, required outputs, units, table bindings, and safe limits.
 COMSOL result-pipeline inspection now verifies the links between Study, Dataset,
@@ -477,8 +484,8 @@ optimization workflow:
 
 1. Extend sampled source-amplitude envelopes to validated frequency/load control
    strategies when the model contract and frequency-dependent evidence support them.
-2. Add deterministic mixed continuous/integer design-of-experiments generation
-   with resumable identities.
+2. Extend the budgeted mixed continuous/integer experiment planner toward
+   evidence-driven refinement, without treating sampled designs as global optima.
 3. Rank candidates by robust multi-scenario objectives and constraints rather
    than nominal performance alone.
 4. Generate a traceable design-decision report from accepted simulation,

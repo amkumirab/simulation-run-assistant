@@ -34,3 +34,15 @@ See `docs/SCALABLE_SWEEP_WORKSPACE.md` for acceptance and limits.
 2. Add a native sweep workspace and bounded analysis table navigation.
 3. Verify large-history exports and stored/live COMSOL evidence separately.
 4. Document, review, test and build; leave changes uncommitted for review.
+
+## Budgeted experiment planner
+
+Approved scope is documented in `docs/EXPERIMENT_PLANNER.md`.
+Build generator and validation first; prove persistence and current-job reuse
+next; integrate a separate native dialog last. Reuse existing signatures,
+contract checks and sequential execution rather than introducing a scheduler.
+Verify each slice with focused tests, then full regressions and a wheel build.
+Risks: false sampling/optimality claims, discrete duplicate points, stale
+identity and accidental solves. Mitigate with explicit shortfalls, persisted
+points, current-identity checks and user-confirmed execution. Leave changes
+available for review before remote publication.

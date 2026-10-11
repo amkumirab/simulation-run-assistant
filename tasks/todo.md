@@ -61,3 +61,25 @@ Compilation, diff and changed-file language/attribution/token-pattern checks
 passed. Source-model SHA-256 remained unchanged. No production queue mutation,
 commit or push was performed. Tk tests skip only when no desktop is available;
 the database and logic tests do not need a display or COMSOL license.
+
+## Budgeted experiment planner tasks
+
+- [x] Generate deterministic bounded continuous/integer experiments.
+  - Verify: unique points, dimensions, counts, constraints and exhaustion tests.
+- [x] Save exact points and rebuild evidence-aware campaign status.
+  - Verify: JSON round trip, malformed files, accepted/active reuse and retry.
+- [x] Add native preview, edit invalidation and guarded queue/resume workflow.
+  - Verify: isolated desktop tests, no implicit queue changes, identity/pause gates.
+- [x] Document usage, verify examples, review and build.
+  - Verify: complete unittest suite, compilation, wheel, language/secret scan.
+
+Verification on 2026-10-11: all 255 unit/integration tests passed, including
+18 new planner tests. The isolated native check verified 30 unsolved samples,
+five stored COMSOL records, full CSV exports, minimum/normal layouts, Enter
+navigation and stale-preview clearing. Two genuine native screenshots were
+captured and reviewed; stored evidence is explicitly separate from generated
+unsolved samples. The 0.32.0 wheel built successfully; compilation and diff
+checks passed. Publication text had no Persian, attribution or common secret
+patterns. Original wireless_transfer.mph SHA-256 matched the prior recorded
+hash. No new COMSOL solve, original-model/production-queue mutation, commit or
+push was performed. Changes remain available for review.

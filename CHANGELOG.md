@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.32.0] - 2026-10-11
+
+### Added
+
+- Native budgeted experiment planner with continuous quantities and integer counts
+- Reproducible bounded stratified sampling, unique states and explicit budget shortfalls
+- Contract-aware range validation and optional inner/outer radius constraint
+- Exact-point JSON plans with offline review and current-evidence status rebuilding
+- Identity/Fresh pipeline gates, queue-only and sequential matching-job resume
+- Complete CSV evidence, isolated stored COMSOL replay and native workflow checks
+
+### Changed
+
+- Package version increased to 0.32.0; no new runtime dependencies
+- WPT roadmap now includes mixed-input experiment planning; adaptive control and
+  joined design-decision evidence remain separate future increments
+
 ## [0.31.0] - 2026-10-08
 
 ### Added
