@@ -981,6 +981,8 @@ class DesktopApp:
         ).pack(side="left", padx=12)
         ttk.Button(design_controls, text="Sweep workspace", style="Secondary.TButton",
                    command=self._open_sweep_workspace).pack(side="left")
+        ttk.Button(design_controls, text="Experiment planner", style="Secondary.TButton",
+                   command=self._open_experiment_planner).pack(side="left", padx=8)
 
         self.jobs_tree = ttk.Treeview(
             card,
@@ -1311,6 +1313,10 @@ class DesktopApp:
         ).pack(side="right")
         refresh_history()
         scan()
+
+    def _open_experiment_planner(self) -> None:
+        from simulation_assistant.experiment_ui import ExperimentDialog
+        ExperimentDialog(self)
 
     def _open_design_campaign(self) -> None:
         from simulation_assistant.design_campaign_ui import DesignCampaignDialog
