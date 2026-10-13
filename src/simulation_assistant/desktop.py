@@ -983,6 +983,12 @@ class DesktopApp:
                    command=self._open_sweep_workspace).pack(side="left")
         ttk.Button(design_controls, text="Experiment planner", style="Secondary.TButton",
                    command=self._open_experiment_planner).pack(side="left", padx=8)
+        field_controls = ttk.Frame(toolbar, style="Card.TFrame")
+        field_controls.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(field_controls, text="Field samples", style="Secondary.TButton",
+                   command=self._open_field_samples).pack(side="left")
+        ttk.Label(field_controls, text="Offline sensor locations and complex-field scenario comparison.",
+                  style="CardText.TLabel").pack(side="left", padx=12)
 
         self.jobs_tree = ttk.Treeview(
             card,
@@ -1317,6 +1323,10 @@ class DesktopApp:
     def _open_experiment_planner(self) -> None:
         from simulation_assistant.experiment_ui import ExperimentDialog
         ExperimentDialog(self)
+
+    def _open_field_samples(self) -> None:
+        from simulation_assistant.field_sample_ui import FieldSamplesDialog
+        FieldSamplesDialog(self.root)
 
     def _open_design_campaign(self) -> None:
         from simulation_assistant.design_campaign_ui import DesignCampaignDialog
