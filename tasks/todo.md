@@ -83,3 +83,26 @@ checks passed. Publication text had no Persian, attribution or common secret
 patterns. Original wireless_transfer.mph SHA-256 matched the prior recorded
 hash. No new COMSOL solve, original-model/production-queue mutation, commit or
 push was performed. Changes remain available for review.
+
+## Field samples and sensor layout tasks
+
+- [x] Validate typed datasets/layouts and project complex fields.
+  - Verify: finite values, units, missing points, coordinates and phase tests.
+- [x] Import bounded CSV, save/load exact workspace and export evidence.
+  - Verify: round trip, malformed/oversized files, source digest and CSV escaping.
+- [x] Add native metadata, layout editor and scenario comparison.
+  - Verify: isolated import/edit/save/restart, keyboard and layout checks.
+- [x] Add honest examples/screenshots, docs, review and full regression checks.
+  - Verify: complete suite, compilation, wheel and publication checks.
+
+Verification on 2026-10-13: all 276 tests passed, including 21 new field-sample
+tests and native checks on Windows. The isolated application workflow verified
+the Runs entry point, normalized complex samples, a 3x3 grid, eight available
+readings plus one explicitly missing sample, full CSV export, minimum/normal
+sizes, keyboard evidence and edit invalidation. Two actual native captures show
+synthetic data only; no new COMSOL or real MTJ evidence is claimed. A visual
+review corrected overlapping chart labels. The 0.33.0 wheel built successfully
+and its four field modules matched current source bytes. Compilation and diff
+checks passed. The original wireless_transfer.mph SHA-256 remained unchanged.
+No production queue/model mutation, solve, dependency installation, commit or
+push was performed. Direct saved-solution COMSOL extraction remains future work.

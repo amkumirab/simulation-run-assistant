@@ -1,0 +1,18 @@
+scenario,point_id,x,y,z,bx_real,bx_imag,by_real,by_imag,bz_real,bz_imag
+Demo Aligned,S1,-20,-20,0,-1,0,-1,0,16,0
+Demo Aligned,S2,0,-20,0,0,0,-1,0,20,0
+Demo Aligned,S3,20,-20,0,1,0,-1,0,16,0
+Demo Aligned,S4,-20,0,0,-1,0,0,0,20,0
+Demo Aligned,S5,0,0,0,0,0,0,0,24,0
+Demo Aligned,S6,20,0,0,1,0,0,0,20,0
+Demo Aligned,S7,-20,20,0,-1,0,1,0,16,0
+Demo Aligned,S8,0,20,0,0,0,1,0,20,0
+Demo Aligned,S9,20,20,0,1,0,1,0,16,0
+Demo Shifted,S1,-20,-20,0,-2,1,-1,0,8,2
+Demo Shifted,S2,0,-20,0,-1,1,-1,0,14,3
+Demo Shifted,S3,20,-20,0,0,1,-1,0,20,4
+Demo Shifted,S4,-20,0,0,-2,1,0,0,10,2
+Demo Shifted,S5,0,0,0,-1,1,0,0,18,3
+Demo Shifted,S6,20,0,0,0,1,0,0,24,4
+Demo Shifted,S7,-20,20,0,-2,1,1,0,8,2
+Demo Shifted,S8,0,20,0,-1,1,1,0,14,3

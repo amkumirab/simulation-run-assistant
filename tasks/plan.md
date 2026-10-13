@@ -46,3 +46,12 @@ Risks: false sampling/optimality claims, discrete duplicate points, stale
 identity and accidental solves. Mitigate with explicit shortfalls, persisted
 points, current-identity checks and user-confirmed execution. Leave changes
 available for review before remote publication.
+
+## Field samples and sensor layout
+
+Implement the approved offline scope in `docs/FIELD_SAMPLES.md`. First prove
+typed phasor projection and unavailable-state handling, then bounded CSV/JSON
+round trips and evidence exports, then the native editor and comparison view.
+Reuse existing desktop styles and CSV escaping. Keep solver, queue and model
+code unchanged. Verify native minimum/normal sizes and edit invalidation with
+isolated data. Use labeled synthetic evidence; leave changes uncommitted.

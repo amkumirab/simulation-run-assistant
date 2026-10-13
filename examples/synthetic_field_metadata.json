@@ -1,0 +1,13 @@
+{
+  "name": "Synthetic spatial phasor example",
+  "source_kind": "synthetic",
+  "model_revision": "Illustrative fixture - not an MPH model",
+  "solution_id": "Hand-defined values - not a physics solve",
+  "coordinate_frame": "Fixed global XYZ - origin at grid center",
+  "coordinate_unit": "mm",
+  "field_unit": "uT",
+  "frequency_hz": 85000.0,
+  "phasor_convention": "peak",
+  "excitation": "Illustrative TX reference only",
+  "phase_reference": "Shared synthetic phase zero"
+}

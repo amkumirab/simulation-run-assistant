@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.33.0] - 2026-10-13
+
+### Added
+
+- Offline native Field Samples workspace with explicit units and phasor metadata
+- Bounded complex-field CSV import and exact portable JSON workspace round trips
+- Fixed-location sensor editing, centered grid templates and ideal-axis projections
+- Named scenario/reference comparison with amplitude and wrapped phase changes
+- Explicit missing-point and position-mismatch states without interpolation
+- Sampled XY plots, full CSV evidence and sensor-location export
+- Labeled synthetic example, isolated native checks and genuine app screenshots
+
+### Changed
+
+- Package version increased to 0.33.0; no new runtime dependencies
+- Spatial-field preparation remains separate from COMSOL solving, calibrated MTJ
+  response, dynamic tracking, DOA inference and hardware control
+
 ## [0.32.0] - 2026-10-11
 
 ### Added

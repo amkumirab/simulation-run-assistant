@@ -461,6 +461,13 @@ ordered mesh levels, convergence rules, and report interpretation.
 
 ## Scientific roadmap
 
+For spatial-field review, open **Runs > Field samples**. Import explicitly
+declared complex-field CSV data, define fixed sensor locations/directions and
+compare named scenarios with an exact saved workspace. These are ideal-axis
+field projections, not calibrated MTJ voltages or a moving-vehicle controller.
+See the [field samples guide](docs/FIELD_SAMPLES.md) for the format, metadata,
+missing-evidence rules and an isolated synthetic desktop example.
+
 For bounded input exploration, open **Runs > Experiment planner** in the native
 app. Configure continuous quantities and integer counts, choose a state budget
 and seed, inspect the exact points, then save or explicitly queue/run them.
