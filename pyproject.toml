@@ -31,7 +31,7 @@ sim-assistant = "simulation_assistant.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-simulation_assistant = ["dashboard.html"]
+simulation_assistant = ["dashboard.html", "SavedFieldSampler.java"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
