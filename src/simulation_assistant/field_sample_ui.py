@@ -88,8 +88,17 @@ class FieldSamplesDialog:
         actions = ttk.Frame(body, style="Card.TFrame")
         actions.grid(row=4, column=0, sticky="ew")
         for index, (label, callback) in enumerate((("Load workspace", self.load), ("Save workspace", self.save),
-                 ("Export comparison CSV", self.export), ("Export layout points", self.export_layout), ("Close", self.window.destroy))):
+                 ("Export comparison CSV", self.export), ("Export layout points", self.export_layout),
+                 ("Sample saved COMSOL fields", self.open_saved_fields), ("Close", self.window.destroy))):
             ttk.Button(actions, text=label, command=callback, style="Secondary.TButton").grid(row=index//4, column=index%4, padx=(0, 8), pady=4)
+
+    def open_saved_fields(self):
+        from simulation_assistant.comsol_field_ui import SavedFieldDialog
+        dialog = getattr(self, 'saved_fields', None)
+        if dialog is not None and dialog.window.winfo_exists():
+            dialog.window.lift()
+        else:
+            self.saved_fields = SavedFieldDialog(self)
 
     def invalidate(self, *_args):
         if hasattr(self, "tree"):
