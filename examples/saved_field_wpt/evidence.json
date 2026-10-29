@@ -1,0 +1,339 @@
+{
+  "schema": "wpt.saved-field-campaign.v1",
+  "source_csv_sha256": "90cb446e910a5ee4e9f8562411ec4d9655554ce7cdb819b9583abb62ec85921a",
+  "metadata": {
+    "name": "Saved COMSOL fields",
+    "source_kind": "comsol-export",
+    "model_revision": "See source evidence bundle",
+    "solution_id": "Explicit saved scenarios",
+    "coordinate_frame": "Global Cartesian XYZ",
+    "coordinate_unit": "m",
+    "field_unit": "T",
+    "frequency_hz": 85000.0,
+    "phasor_convention": "peak",
+    "excitation": "TX 1 A peak",
+    "phase_reference": "TX phase zero"
+  },
+  "sources": [
+    {
+      "schema": "wpt.saved-field-evidence.v1",
+      "model_sha256": "fcbb21a7033ce14faa5e348e2fb11916b2f901a9dd0dc35d65451f65e7969dff",
+      "states": [
+        {
+          "scenario": "Position 1",
+          "dataset": "dset1",
+          "solver": "sol1",
+          "outer": 1,
+          "inner": 1,
+          "frequency_hz": 85000.0,
+          "parameters": "freq=85000.0 Hz; case_id=1.0 "
+        }
+      ],
+      "expressions": [
+        "mf.Bx",
+        "mf.By",
+        "mf.Bz"
+      ],
+      "source_csv_sha256": "72c59cecf5204831ba908198df2566d7e4c392dbca396413d26e1a4f042aaec3",
+      "metadata": {
+        "name": "Saved COMSOL fields",
+        "source_kind": "comsol-export",
+        "model_revision": "fcbb21a7033ce14faa5e348e2fb11916b2f901a9dd0dc35d65451f65e7969dff",
+        "solution_id": "Explicit saved states",
+        "coordinate_frame": "Global Cartesian XYZ",
+        "coordinate_unit": "m",
+        "field_unit": "T",
+        "frequency_hz": 85000.0,
+        "phasor_convention": "peak",
+        "excitation": "TX 1 A peak",
+        "phase_reference": "TX phase zero"
+      },
+      "method": "COMSOL Interp at fixed global XYZ points",
+      "extrapolation": 0,
+      "phase_rotation_deg": 0,
+      "new_solve": false,
+      "sensor_response": "Not calibrated MTJ voltage",
+      "sensors": [
+        {
+          "point_id": "S1",
+          "position_m": [
+            -0.02,
+            -0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S2",
+          "position_m": [
+            0.0,
+            -0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S3",
+          "position_m": [
+            0.02,
+            -0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S4",
+          "position_m": [
+            -0.02,
+            0.0,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S5",
+          "position_m": [
+            0.0,
+            0.0,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S6",
+          "position_m": [
+            0.02,
+            0.0,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S7",
+          "position_m": [
+            -0.02,
+            0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S8",
+          "position_m": [
+            0.0,
+            0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S9",
+          "position_m": [
+            0.02,
+            0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        }
+      ]
+    },
+    {
+      "schema": "wpt.saved-field-evidence.v1",
+      "model_sha256": "78e2fd760ed0573732439d112df304faaa1d2bda86de3d3e959e108a6ee8ea94",
+      "states": [
+        {
+          "scenario": "Position 2",
+          "dataset": "dset1",
+          "solver": "sol1",
+          "outer": 1,
+          "inner": 1,
+          "frequency_hz": 85000.0,
+          "parameters": "freq=85000.0 Hz; case_id=1.0 "
+        }
+      ],
+      "expressions": [
+        "mf.Bx",
+        "mf.By",
+        "mf.Bz"
+      ],
+      "source_csv_sha256": "e1ff1588f029f1da419eda9294cecb7f70e63c652bf8e144d9d09dbbe67ff56f",
+      "metadata": {
+        "name": "Saved COMSOL fields",
+        "source_kind": "comsol-export",
+        "model_revision": "78e2fd760ed0573732439d112df304faaa1d2bda86de3d3e959e108a6ee8ea94",
+        "solution_id": "Explicit saved states",
+        "coordinate_frame": "Global Cartesian XYZ",
+        "coordinate_unit": "m",
+        "field_unit": "T",
+        "frequency_hz": 85000.0,
+        "phasor_convention": "peak",
+        "excitation": "TX 1 A peak",
+        "phase_reference": "TX phase zero"
+      },
+      "method": "COMSOL Interp at fixed global XYZ points",
+      "extrapolation": 0,
+      "phase_rotation_deg": 0,
+      "new_solve": false,
+      "sensor_response": "Not calibrated MTJ voltage",
+      "sensors": [
+        {
+          "point_id": "S1",
+          "position_m": [
+            -0.02,
+            -0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S2",
+          "position_m": [
+            0.0,
+            -0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S3",
+          "position_m": [
+            0.02,
+            -0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S4",
+          "position_m": [
+            -0.02,
+            0.0,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S5",
+          "position_m": [
+            0.0,
+            0.0,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S6",
+          "position_m": [
+            0.02,
+            0.0,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S7",
+          "position_m": [
+            -0.02,
+            0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S8",
+          "position_m": [
+            0.0,
+            0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "point_id": "S9",
+          "position_m": [
+            0.02,
+            0.02,
+            0.08
+          ],
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ]
+        }
+      ]
+    }
+  ],
+  "compatibility": "Shared frame, excitation and phase reference declared by user; not scientifically certified",
+  "new_solve": false,
+  "sensor_response": "Not calibrated MTJ voltage",
+  "workspace_sha256": "c9eba9330c7100ef3a3da396cd518e0c348812c8d69e8f024bb7aac34b64610b"
+}
