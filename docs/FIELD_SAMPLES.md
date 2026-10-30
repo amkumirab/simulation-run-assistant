@@ -173,5 +173,7 @@ three-dimensional vector maximum when components have different phases.
 The field source (TX, RX or combined operating excitation) must be explicit;
 one-ampere characterization fields are not automatically loaded operating fields.
 The feature does not estimate a moving vehicle's position, decide WPT selectivity
-or implement a dynamic controller. Future direct COMSOL extraction must identify
-the exact saved solution and sample locations without modifying original models.
+or implement a dynamic controller. Direct saved-solution extraction is available
+through **Sample saved COMSOL fields** after defining the layout. See the
+[saved-solution guide](COMSOL_FIELD_SAMPLING.md) for supported models and source
+evidence bundles. The CSV-only workflow above remains available independently.

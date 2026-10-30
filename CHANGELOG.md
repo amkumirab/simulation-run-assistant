@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.34.0] - 2026-10-30
+
+### Added
+
+- Native saved-solution COMSOL connection from the Field Samples workspace
+- Explicit dataset, solver and outer/inner state selection with saved parameters
+- Fixed-location complex Cartesian field extraction across named source models
+- Cancellable background sampling with source-hash and stale-input rejection
+- Portable CSV/workspace/source-evidence bundles with completion and hash records
+- Reproducible saved-WPT checks without solving or changing original models
+- License-free replay of included saved WPT fields with integrity checks,
+  isolated native comparison and CSV exports
+- Worked saved-field example with actual application captures and source records
+- Documentation checks for example arguments, local links and version consistency
+
+### Changed
+
+- Package version increased to 0.34.0 without new runtime dependencies
+- Initial direct sampling supports single-geometry Cartesian 3D frequency-domain
+  solutions only; no automatic 2D/axisymmetric mapping or MTJ suitability claim
+
 ## [0.33.0] - 2026-10-13
 
 ### Added

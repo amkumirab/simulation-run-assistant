@@ -45,6 +45,22 @@ synthetic history test; synthetic records are never presented as physics data.
 
 ![Native sweep workspace with two new COMSOL gap solves](docs/images/sweep-workspace-live/sweep-workspace.png)
 
+### Compare saved fields at fixed sensors
+
+Try the included aligned/30 mm RX-offset WPT example without COMSOL or private
+model files. After the development setup below, run from the repository root:
+
+```powershell
+.\.venv\Scripts\python.exe examples/replay_saved_comsol_fields.py --desktop --output-dir artifacts
+```
+
+The window is explicitly labeled **STORED COMSOL RESULT REPLAY**. It compares
+nine fixed +Z sensors and exports the comparison into a new artifact directory.
+These are saved simulation fields, not measured hardware or calibrated sensor
+voltages. The [saved-field example](examples/saved_field_wpt/README.md) explains
+the expected numbers and a headless check. To sample your own solved 3D models,
+follow the [COMSOL field sampling guide](docs/COMSOL_FIELD_SAMPLING.md).
+
 ## Why this project exists
 
 Long simulation sweeps are easy to lose track of: inputs live in separate files,
@@ -63,6 +79,9 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Guided local web assistant for COMSOL connection checks, run setup, queueing,
   targeted execution, monitoring, details, and retries
 - Native desktop assistant with no browser or local web server requirement
+- Fixed sensor layouts and complex magnetic-field scenario comparison
+- Read-only sampling of explicit saved Cartesian 3D COMSOL states, with
+  cancellation, stale-result rejection and portable source evidence
 - Live COMSOL stage, percentage, elapsed time, activity warning, and log monitoring
 - Local workspace profiles for recent models, COMSOL targets, formulas, and sweep presets
 - COMSOL Plot Group discovery, viewing, sweep comparison, and portable reports
@@ -468,6 +487,20 @@ field projections, not calibrated MTJ voltages or a moving-vehicle controller.
 See the [field samples guide](docs/FIELD_SAMPLES.md) for the format, metadata,
 missing-evidence rules and an isolated synthetic desktop example.
 
+To read real saved solutions, define a sensor layout and choose **Sample saved
+COMSOL fields**. Select exact states from solved Cartesian 3D models, name the
+scenarios and compare complex Bx/By/Bz at fixed locations. No new solve or source
+save is performed. The [saved-solution sampling guide](docs/COMSOL_FIELD_SAMPLING.md)
+explains explicit excitation/phase declarations and portable source bundles.
+
+For the sensor-alignment track, the next steps are a datasheet-backed MTJ
+response model, position datasets with ground truth kept separate from model
+inputs, baseline coil-selection comparison with an agreed multi-coil model,
+then clearly labeled static-scenario replay. Confirm the intended field with
+the research team first: the charging-coil AC field is not automatically the
+vehicle's magnetic signature. No calibrated sensor response or vehicle-position
+estimator is included in the current field workspace.
+
 For bounded input exploration, open **Runs > Experiment planner** in the native
 app. Configure continuous quantities and integer counts, choose a state budget
 and seed, inspect the exact points, then save or explicitly queue/run them.
@@ -515,6 +548,12 @@ src/simulation_assistant/
 |-- envelope_ui.py # Native offline envelope settings, charts and evidence viewer
 |-- cli.py          # Command-line interface
 |-- desktop.py      # Native Tkinter assistant
+|-- field_samples.py # Complex fields, fixed sensors and axis projections
+|-- field_sample_files.py # Bounded CSV/JSON workspaces and comparison exports
+|-- field_sample_ui.py # Native field import, layout and scenario comparison
+|-- comsol_field_sampling.py # Read-only saved-state extraction and source evidence
+|-- comsol_field_ui.py # Explicit saved-state selection and background sampling
+|-- SavedFieldSampler.java # Packaged COMSOL saved-solution evaluation helper
 |-- formulas.py     # Safe computed-output expression engine
 |-- model_contract.py # Versioned model interface and compatibility checks
 |-- manifest.py     # JSON validation and sweep expansion

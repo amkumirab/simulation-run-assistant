@@ -106,3 +106,75 @@ and its four field modules matched current source bytes. Compilation and diff
 checks passed. The original wireless_transfer.mph SHA-256 remained unchanged.
 No production queue/model mutation, solve, dependency installation, commit or
 push was performed. Direct saved-solution COMSOL extraction remains future work.
+
+## Saved-solution sensor sampling tasks
+
+- [x] Catalog and extract explicit saved states from a private model copy.
+  - Acceptance: complex Cartesian fields, no solve/save, strict source identity.
+  - Verify: unit tests, compiler check and live saved-result extraction.
+- [x] Preserve a portable source evidence bundle.
+  - Acceptance: CSV/workspace hashes, exact solution parameters, no local paths.
+  - Verify: round trip, invalid/incomplete output and corruption tests.
+- [x] Connect a native saved-field panel to Sensor layout.
+  - Acceptance: responsive work, cancellation, stale-result rejection, English UI.
+  - Verify: isolated desktop workflow and minimum/normal size checks.
+- [x] Document and review the complete increment.
+  - Acceptance: usage, limits, genuine test evidence, unchanged source models.
+  - Verify: full regression suite, compilation, wheel and publication scan.
+
+Verification on 2026-10-15: all 292 tests passed, including 16 new sampling and
+native-panel tests. The existing isolated offline UI check also passed. Real
+saved WPT aligned and 30 mm RX-offset models were cataloged and sampled at nine
+fixed +Z sensors, preserving complex Cartesian components. Both source hashes
+matched after sampling. The source bundle reloaded exact fields/layout and
+exported all nine comparison rows. Native minimum/normal sizes passed; actual
+simulation-result screenshots were captured and inspected. Out-of-domain and
+unsupported legacy-model cases failed closed without partial imports or solves.
+The final strict line protocol was also verified against the real catalog.
+Compilation, 0.34.0 wheel, whitespace and publication-text checks passed. No
+runtime dependency or COMSOL security setting changed. Source models and the
+production queue remained unchanged. No commit or push was performed.
+Live coverage is the flat inner sweep documented in the guide, not arbitrary
+solution structures, sensor calibration or loaded-vehicle detection.
+
+## Saved-field example publication slice
+
+- [x] Prepare the existing solved-model check and genuine native captures.
+- [x] Include a portable, path-free saved WPT field example without MPH files.
+- [x] Add offline replay with bounded integrity checks and isolated native UI.
+- [x] Test damaged/inconsistent bundles, optimized Python and headless exports.
+
+Verification on 2026-10-29: all 309 tests passed on the isolated third-slice
+snapshot, including nine new replay/example tests. Compilation and the wheel
+build passed; the package version remains 0.33.0 in this slice. A fresh read of
+the existing aligned and 30 mm RX-offset models using COMSOL 6.3.0.290 produced
+byte-identical CSV/workspace data to the checked example. Both source model
+SHA-256 hashes remained unchanged. Nine current/reference readings, source
+bundle round trips, full CSV export and native minimum/normal sizes passed.
+The center +Z peak projection changed from 37.5295187133 uT to 36.4984380917 uT.
+Three actual native captures were inspected. Offline replay, including clean
+desktop closure, required no COMSOL process or production database. Text,
+common-secret-pattern and whitespace checks passed. No solve, dependency
+installation, original model modification, commit or push was performed.
+Global documentation and the version bump remain in the fourth publication
+slice. MTJ response and hardware/vehicle detection are not implemented here.
+
+## Saved-field documentation and version-preparation slice
+
+- [x] Expose the checked replay and direct sampling guide in README.
+- [x] Complete setup, source selection, export distinctions and troubleshooting.
+- [x] Correct the SavedState constructor example and add documentation checks.
+- [x] Align project/package/changelog versions and verify the 0.34.0 wheel.
+
+Verification on 2026-10-30: all 313 tests passed, including four documentation
+checks. The corrected constructor example, relative documentation/image links,
+replay discoverability and version consistency passed. Compilation and the
+0.34.0 wheel build passed; wheel metadata declares no third-party runtime
+dependencies, and packaged sampling modules/Java resources match source bytes.
+The documented headless replay exported all nine comparison readings without
+COMSOL or production database activity. The native CLI help and imported package
+version were checked. English text, common secret/attribution patterns and
+whitespace checks passed. Runtime behavior, source models and existing datasets
+were not changed. No solve, dependency installation, commit, tag or push was
+performed at that preparation checkpoint. The changelog was left Unreleased
+until publication authorization.
