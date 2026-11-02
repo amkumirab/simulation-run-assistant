@@ -1,0 +1,14 @@
+{
+  "schema": "wpt.model-brief.v1",
+  "name": "Illustrative model brief - no model inspected",
+  "revision": "draft-example",
+  "model_sha256": "",
+  "entries": [
+    {"section": "Geometry", "name": "Coil shape", "value": "Square", "unit": "", "status": "proposed", "source": "Illustrative proposal, not project approval", "reviewed_on": ""},
+    {"section": "Geometry", "name": "TX count", "value": "1", "unit": "1", "status": "proposed", "source": "Illustrative proposal, not project approval", "reviewed_on": ""},
+    {"section": "Geometry", "name": "RX count", "value": "3", "unit": "1", "status": "proposed", "source": "Illustrative proposal, not project approval", "reviewed_on": ""},
+    {"section": "Layer stack", "name": "TX layers, ground to air", "value": "", "unit": "", "status": "unknown", "source": "Pending layout clarification", "reviewed_on": ""},
+    {"section": "Layer stack", "name": "RX layers, air to vehicle", "value": "", "unit": "", "status": "unknown", "source": "Pending layout clarification", "reviewed_on": ""},
+    {"section": "Battery", "name": "Battery specification", "value": "", "unit": "", "status": "unknown", "source": "Pending specifications", "reviewed_on": ""}
+  ]
+}
