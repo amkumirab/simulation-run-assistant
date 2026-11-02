@@ -82,3 +82,23 @@ then run full regressions, compile and build the wheel. Inspect wheel metadata
 and packaged Java resources, and exercise the documented headless replay.
 No model modification, new solve, dependency installation, tag or publication
 is included in this preparation step.
+
+## Model brief: specifications and assumptions
+
+Implement the approved first Model Brief increment in `docs/MODEL_BRIEFS.md`.
+First verify a bounded, strict JSON contract and provenance/quantity rules with
+failing tests; then implement persistence. Connect a focused native editor to
+Runs using existing styles, with pending-edit and unsaved-document protection.
+Test UI workflows in an isolated temporary app database, inspect small/normal
+windows, run full regressions and build the package. No new solver work,
+dependencies, database changes, result association, report generation or remote
+publication. Keep data/persistence tests together and UI/integration tests
+together for later focused commits; do not commit before user finalization.
+
+Publication authorized on 2026-11-02 in four focused commits: data contract and
+tests, native editor and integration tests, illustrative example/native checks
+and actual capture, then guide/README/changelog and 0.35.0 metadata. Test each
+exact staged snapshot separately, push without rewriting history, and check the
+remote commit identities and Python 3.10/3.12 workflow results. Original models,
+production data, dependencies, tags and separate package releases stay outside
+this publication workflow.

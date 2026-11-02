@@ -79,6 +79,8 @@ around that workflow without requiring Redis, Docker, or a cloud account.
 - Guided local web assistant for COMSOL connection checks, run setup, queueing,
   targeted execution, monitoring, details, and retries
 - Native desktop assistant with no browser or local web server requirement
+- Native WPT model briefs with sourced assumptions, explicit unknowns and
+  user-declared confirmation dates, saved separately from simulation models
 - Fixed sensor layouts and complex magnetic-field scenario comparison
 - Read-only sampling of explicit saved Cartesian 3D COMSOL states, with
   cancellation, stale-result rejection and portable source evidence
@@ -500,6 +502,13 @@ then clearly labeled static-scenario replay. Confirm the intended field with
 the research team first: the charging-coil AC field is not automatically the
 vehicle's magnetic signature. No calibrated sensor response or vehicle-position
 estimator is included in the current field workspace.
+
+Open **Runs > Model brief** to record the specifications and assumptions behind
+one revision of a model. Keep proposed dimensions, unknown layer arrangements
+and confirmed specifications distinct, with units and sources. This offline
+editor saves a separate JSON file; it does not change an MPH model or certify
+results. See the [model brief guide](docs/MODEL_BRIEFS.md) for the native workflow
+and an explicitly illustrative example.
 
 For bounded input exploration, open **Runs > Experiment planner** in the native
 app. Configure continuous quantities and integer counts, choose a state budget

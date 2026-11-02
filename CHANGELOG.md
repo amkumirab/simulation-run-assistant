@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.35.0] - 2026-11-02
+
+### Added
+
+- Native WPT model brief editor for sourced specifications and assumptions,
+  explicit unknown values and dated user-declared confirmations
+- Bounded, versioned JSON save/load with atomic writes and pending-edit protection
+- Illustrative model brief and isolated native workflow checks without COMSOL
+
 ## [0.34.0] - 2026-10-30
 
 ### Added

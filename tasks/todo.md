@@ -178,3 +178,47 @@ whitespace checks passed. Runtime behavior, source models and existing datasets
 were not changed. No solve, dependency installation, commit, tag or push was
 performed at that preparation checkpoint. The changelog was left Unreleased
 until publication authorization.
+
+## Model brief tasks
+
+- [x] Strict model brief contract and atomic JSON persistence.
+  - Acceptance: unknown remains unknown; sourced values, dated confirmation,
+    finite quantities and bounded input with no executable expressions.
+  - Verify: `test_model_briefs.py` red/green and round-trip/failure tests.
+- [x] Native form and Runs entry point.
+  - Acceptance: add/edit/remove and save/load without silent loss of pending
+    edits; no COMSOL, results or queue mutation.
+  - Verify: `test_model_brief_desktop.py` and actual native size/keyboard checks.
+- [x] Usage documentation and final quality checks.
+  - Acceptance: English usage and limits; no new dependencies or attribution.
+  - Verify: full regressions, compilation, wheel, diff and publication scan.
+
+Verification on 2026-11-02: all 331 tests passed, including 18 new model brief
+and native-editor tests. Contract tests first failed for the missing module,
+then passed; native tests followed the same red/green sequence. The isolated
+native check passed at 920x700 and 1160x780, including Enter/Tab focus,
+pending-edit rejection, save/load round trips and empty queue/connection state.
+The actual application capture uses explicitly illustrative metadata, not a
+solved or inspected COMSOL model. Optional capture initially lacked Pillow in
+the project venv; the already-bundled runtime supplied it without installation.
+Ordinary native checks passed in the project venv without Pillow.
+Compilation and the wheel build passed; packaged brief modules match source
+bytes, with no new runtime dependencies. Local README/guide links and image,
+English text, common secret/attribution patterns and diff whitespace passed.
+Five-axis review found no blocking issue within the declared scope. Free-text
+source privacy remains the user's responsibility; stored confirmation and model
+hashes are declarations, not authentication or engineering certification.
+No original model, production database, queue schema or existing result format
+was changed. No solve, dependency installation, version bump, commit, tag or
+push was performed at that preparation checkpoint. Automatic result association and revision comparison reports
+remain outside this increment.
+
+Publication verification on 2026-11-02: the separately exported staged data
+snapshot passed all 324 tests; the native-editor snapshot passed all 331 tests;
+the illustrative-example snapshot passed all 331 tests and its actual native
+workflow check. Each snapshot imported its own source tree, not the unpublished
+working tree, and passed compilation and staged publication/whitespace checks.
+Those three focused commits were pushed without changing existing history.
+The fourth publication slice completes the guide, README, changelog and 0.35.0
+package metadata, with full snapshot regression/build verification required
+before its commit and push. No model or production result is part of these files.
