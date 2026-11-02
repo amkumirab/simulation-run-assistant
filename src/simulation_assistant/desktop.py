@@ -989,6 +989,8 @@ class DesktopApp:
                    command=self._open_field_samples).pack(side="left")
         ttk.Label(field_controls, text="Offline sensor locations and complex-field scenario comparison.",
                   style="CardText.TLabel").pack(side="left", padx=12)
+        ttk.Button(field_controls, text="Model brief", style="Secondary.TButton",
+                   command=self._open_model_brief).pack(side="left", padx=8)
 
         self.jobs_tree = ttk.Treeview(
             card,
@@ -1327,6 +1329,10 @@ class DesktopApp:
     def _open_field_samples(self) -> None:
         from simulation_assistant.field_sample_ui import FieldSamplesDialog
         FieldSamplesDialog(self.root)
+
+    def _open_model_brief(self) -> None:
+        from simulation_assistant.model_brief_ui import ModelBriefDialog
+        ModelBriefDialog(self.root)
 
     def _open_design_campaign(self) -> None:
         from simulation_assistant.design_campaign_ui import DesignCampaignDialog
