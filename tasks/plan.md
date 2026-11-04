@@ -102,3 +102,15 @@ exact staged snapshot separately, push without rewriting history, and check the
 remote commit identities and Python 3.10/3.12 workflow results. Original models,
 production data, dependencies, tags and separate package releases stay outside
 this publication workflow.
+
+## Saved geometry and layer inspection
+
+Implement `docs/GEOMETRY_INSPECTOR.md` in four focused slices: read-only engine
+and validated bounds; portable exports and proposed brief drafts; native table
+and envelope workspace; real saved-model checks, replay, captures, documentation
+and version metadata. First prove read-only finalized-geometry measurement against
+existing three-RX models. No scientific solve or source mutation. Test data
+logic before UI, preserve existing field tests at the shared transport seam,
+verify isolated native interactions and source digests, then run complete tests,
+build and publication checks. Publication to the existing GitHub repository is
+authorized; private MPH files and production databases are not publication input.

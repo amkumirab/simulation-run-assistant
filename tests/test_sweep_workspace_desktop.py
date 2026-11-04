@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from simulation_assistant.storage import JobStore
+from native_test_support import destroy_root
+from native_test_support import collect_native_garbage as tearDownModule
 
 
 @unittest.skipIf(tk is None, "Native checks require Tk; use the native workflow script on a desktop")
@@ -19,7 +21,7 @@ class SweepWorkspaceDesktopTests(unittest.TestCase):
         except tk.TclError:
             self.skipTest("Native checks require a display; database tests remain headless")
         self.root.withdraw()
-        self.addCleanup(self.root.destroy)
+        self.addCleanup(destroy_root, self.root)
         from simulation_assistant.desktop import DesktopApp
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

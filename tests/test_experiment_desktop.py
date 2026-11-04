@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from native_test_support import destroy_root
+from native_test_support import collect_native_garbage as tearDownModule
 try:
     import tkinter as tk
 except ImportError:
@@ -16,7 +18,7 @@ class ExperimentDesktopTests(unittest.TestCase):
             self.root = tk.Tk()
         except tk.TclError:
             self.skipTest("Native checks require a desktop display")
-        self.addCleanup(self.root.destroy)
+        self.addCleanup(destroy_root, self.root)
         self.root.withdraw()
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

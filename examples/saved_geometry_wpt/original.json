@@ -1,0 +1,167 @@
+{
+  "schema": "wpt.geometry-snapshot.v1",
+  "source_sha256": "ffa0f12bc3b5877b0b039742ffab099795bc3d33fb188177112a896b8e56c3a8",
+  "component": "comp1",
+  "geometry": "geom1",
+  "length_unit": "m",
+  "engine_version": "COMSOL Multiphysics 6.3 (Build: 290)",
+  "parts": [
+    {
+      "domain": 1,
+      "selections": "geom1_sph1_dom, sel_air_phys, sel_mf_active, wpt_air, wpt_active",
+      "bounds_m": [
+        -1.2000000476837158,
+        1.2000000476837158,
+        -1.2000000476837158,
+        1.2000000476837158,
+        -1.1200000047683716,
+        1.2799999713897705
+      ]
+    },
+    {
+      "domain": 2,
+      "selections": "geom1_sph1_dom, wpt_solids, wpt_shields, geom1_mr_left_shield_dom, mr_rx_shields, mr_backing_visual",
+      "bounds_m": [
+        -0.4099999964237213,
+        -0.15000000596046448,
+        -0.12999999523162842,
+        0.12999999523162842,
+        0.17000000178813934,
+        0.1720000058412552
+      ]
+    },
+    {
+      "domain": 3,
+      "selections": "geom1_sph1_dom, wpt_solids, wpt_ferrite, wpt_active, geom1_mr_left_ferr_dom, mr_rx_ferrite, mr_backing_visual",
+      "bounds_m": [
+        -0.4000000059604645,
+        -0.1599999964237213,
+        -0.11999999731779099,
+        0.11999999731779099,
+        0.16300000250339508,
+        0.1679999977350235
+      ]
+    },
+    {
+      "domain": 4,
+      "selections": "geom1_sph1_dom, wpt_solids, wpt_active, geom1_mr_left_outer_dom, geom1_mr_left_diff_dom, mr_rx_coils",
+      "bounds_m": [
+        -0.3799999952316284,
+        -0.18000000715255737,
+        -0.10000000149011612,
+        0.10000000149011612,
+        0.1550000011920929,
+        0.1599999964237213
+      ]
+    },
+    {
+      "domain": 5,
+      "selections": "geom1_cyl4_dom, geom1_csel2_dom, geom1_sph1_dom, sel_shield_phys, wpt_solids, wpt_shields, mr_backing_visual",
+      "bounds_m": [
+        -0.12999999523162842,
+        0.12999999523162842,
+        -0.12999999523162842,
+        0.12999999523162842,
+        -0.012000000104308128,
+        -0.009999999776482582
+      ]
+    },
+    {
+      "domain": 6,
+      "selections": "geom1_sph1_dom, wpt_solids, wpt_shields, geom1_mr_center_shield_dom, mr_rx_shields, mr_backing_visual",
+      "bounds_m": [
+        -0.12999999523162842,
+        0.12999999523162842,
+        -0.12999999523162842,
+        0.12999999523162842,
+        0.17000000178813934,
+        0.1720000058412552
+      ]
+    },
+    {
+      "domain": 7,
+      "selections": "geom1_cyl3_dom, geom1_csel1_dom, geom1_sph1_dom, sel_ferrite_phys, sel_mf_active, wpt_solids, wpt_ferrite, wpt_active, mr_backing_visual",
+      "bounds_m": [
+        -0.11999999731779099,
+        0.11999999731779099,
+        -0.11999999731779099,
+        0.11999999731779099,
+        -0.00800000037997961,
+        -0.003000000026077032
+      ]
+    },
+    {
+      "domain": 8,
+      "selections": "geom1_sph1_dom, wpt_solids, wpt_ferrite, wpt_active, geom1_mr_center_ferr_dom, mr_rx_ferrite, mr_backing_visual",
+      "bounds_m": [
+        -0.11999999731779099,
+        0.11999999731779099,
+        -0.11999999731779099,
+        0.11999999731779099,
+        0.16300000250339508,
+        0.1679999977350235
+      ]
+    },
+    {
+      "domain": 9,
+      "selections": "geom1_dif1_dom, geom1_csel6_dom, geom1_sph1_dom, sel_mf_active, wpt_solids, wpt_active",
+      "bounds_m": [
+        -0.10000000149011612,
+        0.10000000149011612,
+        -0.10000000149011612,
+        0.10000000149011612,
+        0.0,
+        0.004999999888241291
+      ]
+    },
+    {
+      "domain": 10,
+      "selections": "geom1_sph1_dom, wpt_solids, wpt_active, geom1_mr_center_outer_dom, geom1_mr_center_diff_dom, mr_rx_coils",
+      "bounds_m": [
+        -0.10000000149011612,
+        0.10000000149011612,
+        -0.10000000149011612,
+        0.10000000149011612,
+        0.1550000011920929,
+        0.1599999964237213
+      ]
+    },
+    {
+      "domain": 11,
+      "selections": "geom1_sph1_dom, wpt_solids, wpt_shields, geom1_mr_right_shield_dom, mr_rx_shields, mr_backing_visual",
+      "bounds_m": [
+        0.15000000596046448,
+        0.4099999964237213,
+        -0.12999999523162842,
+        0.12999999523162842,
+        0.17000000178813934,
+        0.1720000058412552
+      ]
+    },
+    {
+      "domain": 12,
+      "selections": "geom1_sph1_dom, wpt_solids, wpt_ferrite, wpt_active, geom1_mr_right_ferr_dom, mr_rx_ferrite, mr_backing_visual",
+      "bounds_m": [
+        0.1599999964237213,
+        0.4000000059604645,
+        -0.11999999731779099,
+        0.11999999731779099,
+        0.16300000250339508,
+        0.1679999977350235
+      ]
+    },
+    {
+      "domain": 13,
+      "selections": "geom1_sph1_dom, wpt_solids, wpt_active, geom1_mr_right_outer_dom, geom1_mr_right_diff_dom, mr_rx_coils",
+      "bounds_m": [
+        0.18000000715255737,
+        0.3799999952316284,
+        -0.10000000149011612,
+        0.10000000149011612,
+        0.1550000011920929,
+        0.1599999964237213
+      ]
+    }
+  ],
+  "snapshot_sha256": "2ab0c5f63a556a3466f25e1e4e323f381769d2d4a1fbb47a6c03de5fcdeaf86a"
+}

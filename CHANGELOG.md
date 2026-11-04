@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.36.0] - 2026-11-04
+
+### Added
+
+- Native Geometry & Layer Inspector for saved finalized 3D COMSOL domain bounds
+- Explicit domain selection, approximate XZ envelope schematics and declared
+  parallel-stack Z-envelope separation, without implying certified clearance
+- Bounded portable JSON snapshots, selected-domain CSV and separate unsaved
+  proposed Model Brief drafts retaining source identity
+- Real original/overlap/control geometry snapshots, license-free replay,
+  actual native captures and a read-only saved-model inspection example
+
+### Changed
+
+- Shared private-copy compiler/batch transport with existing field sampling
+- Preserved undecodable Windows compiler diagnostics rather than losing stderr
+- Cleaned up isolated native test windows and timers before later GUI checks
+
 ## [0.35.0] - 2026-11-02
 
 ### Added

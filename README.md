@@ -510,6 +510,14 @@ editor saves a separate JSON file; it does not change an MPH model or certify
 results. See the [model brief guide](docs/MODEL_BRIEFS.md) for the native workflow
 and an explicitly illustrative example.
 
+Open **Runs > Geometry inspector** to read saved 3D COMSOL domain bounds from
+a private copy, select layers and inspect an explicitly schematic XZ envelope
+view. Export portable JSON/CSV or create a separate proposed Model Brief.
+No geometry build or solve starts here, and envelope separation is not certified
+clearance. The [geometry inspector guide](docs/GEOMETRY_INSPECTOR.md) includes
+real original/overlap/control snapshots, actual native captures and license-free
+offline replay; no private MPH files are published.
+
 For bounded input exploration, open **Runs > Experiment planner** in the native
 app. Configure continuous quantities and integer counts, choose a state budget
 and seed, inspect the exact points, then save or explicitly queue/run them.

@@ -8,6 +8,8 @@ except ImportError:
     tk = None
 
 from simulation_assistant.model_briefs import load_model_brief
+from native_test_support import destroy_root
+from native_test_support import collect_native_garbage as tearDownModule
 
 
 @unittest.skipIf(tk is None, 'Native checks require Tk')
@@ -30,9 +32,7 @@ class ModelBriefDesktopTests(unittest.TestCase):
         self.path = self.folder/'brief.json'
 
     def close_root(self):
-        for timer in self.root.tk.call('after', 'info'):
-            self.root.after_cancel(timer)
-        self.root.destroy()
+        destroy_root(self.root)
 
     def add_entry(self, **changes):
         values = dict(section='Geometry', name='RX count', value='3', unit='1',

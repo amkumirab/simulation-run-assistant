@@ -1,6 +1,5 @@
 import tempfile
 import threading
-import gc
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -10,13 +9,13 @@ except ImportError:
     tk = None
 from test_geometry_inspector import snapshot
 from simulation_assistant.geometry_files import load_snapshot
+from native_test_support import destroy_root
+from native_test_support import collect_native_garbage as tearDownModule
 
 
 @unittest.skipIf(tk is None, 'Native checks require Tk')
 class GeometryDesktopTests(unittest.TestCase):
     def setUp(self):
-        # Dispose prior isolated Tk interpreters on the UI thread, not a worker.
-        gc.collect()
         try:
             self.root = tk.Tk()
         except tk.TclError:
@@ -34,12 +33,7 @@ class GeometryDesktopTests(unittest.TestCase):
         self.root.update_idletasks()
 
     def cleanup(self):
-        for child in list(self.root.winfo_children()):
-            if isinstance(child, tk.Toplevel):
-                child.destroy()
-        for timer in self.root.tk.call('after', 'info'):
-            self.root.after_cancel(timer)
-        self.root.destroy()
+        destroy_root(self.root)
 
     def test_empty_selection_cannot_export_and_draft_is_proposed_unsaved(self):
         dialog = self.dialog

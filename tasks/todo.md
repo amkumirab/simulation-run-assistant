@@ -222,3 +222,58 @@ Those three focused commits were pushed without changing existing history.
 The fourth publication slice completes the guide, README, changelog and 0.35.0
 package metadata, with full snapshot regression/build verification required
 before its commit and push. No model or production result is part of these files.
+
+## Saved geometry inspector tasks
+
+- [x] Read-only engine, geometry protocol and SI envelope validation.
+  - Verify: focused field/geometry regressions and live saved-model measurement.
+- [x] Portable snapshot/CSV and explicit proposed brief generation.
+  - Verify: strict round trips, corrupt input, no inferred confirmation/clearance.
+- [x] Native table, schematic envelopes, cancellable inspection and stale guards.
+  - Verify: isolated actual UI, keyboard, minimum/normal sizes, no queue changes.
+- [x] Real model/replay examples, captures and docs; staged publication gates below.
+  - Verify: unchanged source hashes, all tests, package resources and remote CI.
+
+### Geometry inspection verification record (2026-11-04)
+
+Three existing 3RX MPH models (original, overlap, height-matched control) each
+returned 13 saved domains through the packaged COMSOL 6.3.0.290 helper. Original
+SHA-256 values matched before/after. Center TX/RX Z envelopes differed by about
+150 mm. Side layers were 20 mm higher in overlap/control, and only overlap
+reduced side-center offsets from 280 to 140 mm. These are approximate geometry
+measurements, not solved performance or clearance claims.
+
+An actual native background inspection matched the original portable fixture
+exactly, with no callback errors or queued jobs. All three isolated native
+replays passed keyboard and 1000x760/1240x850 bounds checks. Four unretouched
+RGB window captures were visually reviewed; each is 1240x850, labels offline
+replay and contains no source path or embedded personal image metadata.
+
+The legacy wireless-transfer model was rejected for multiple geometries; it
+was not rebuilt and its source hash matched. A separate disposable synthetic
+2D model failed the 3D requirement. A disposable 200x100x5 mm block verified
+the measurement API returns geometry-unit bounds before SI conversion. Those
+diagnostic fixtures are not research results and are not published as examples.
+
+Regression checks include malformed units/large integers, frame/source identity,
+cancellation/failure, strict corrupt/oversized JSON, CSV formula protection,
+explicit proposal statuses, late-worker rejection and independent draft lifetime.
+Review found and fixed unsaved drafts closing with their inspector; the new
+regression demonstrates drafts survive inspector close. Existing field sampling
+and model brief workflows remain covered. No dependency, schema, source-model
+or production database change was made.
+
+Publication is split into engine, portable exports, native workspace and worked
+examples/documentation. Each exact staged source snapshot is tested separately,
+not against later unpublished code. The engine snapshot passed 337 tests and
+the portable-export snapshot passed 341. The native snapshot passed 349 tests.
+Combined native checks also exposed idle theme callbacks and queue-poll timers
+left by older test workspaces. A shared test-only teardown now flushes idle
+theme work, destroys dialogs before cancelling root jobs and destroys the
+interpreter last. Module teardown collects released Tk objects on the UI thread
+before subsequent worker tests can trigger garbage collection. A focused
+regression asserts no pending callback remains;
+no test assertion, skip policy or quality threshold was removed.
+Final gates include the complete example suite, compilation, wheel resource checks, exact staged
+English/private-path/credential/attribution scans and remote CI. Live COMSOL and
+native-window checks run locally; headless CI does not replace them.
