@@ -2,15 +2,11 @@
 from __future__ import annotations
 
 import csv
-import base64
-import gzip
 import hashlib
 import io
 import json
 import math
 import re
-import shutil
-import tempfile
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -21,6 +17,7 @@ from simulation_assistant.field_samples import (
 )
 from simulation_assistant.field_sample_files import FIELD_COLUMNS, save_field_workspace
 from simulation_assistant.process_control import run_cancellable_process
+from simulation_assistant.comsol_readonly import model_digest, run_helper
 
 TAG = re.compile(r'[A-Za-z][A-Za-z0-9_]{0,39}\Z')
 COMPONENT = re.compile(r'(?:[A-Za-z][A-Za-z0-9_]{0,39}\.){1,3}B[xyz]\Z')
@@ -62,17 +59,6 @@ class SavedScenario:
     model_path: Path
     model_sha256: str
     state: SavedState
-
-
-def model_digest(path: str | Path) -> str:
-    path = Path(path)
-    if path.suffix.lower() != '.mph' or not path.is_file() or path.stat().st_size > 2_000_000_000:
-        raise ValueError('Choose an existing MPH file no larger than 2 GB')
-    digest = hashlib.sha256()
-    with path.open('rb') as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b''):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _state(state):
@@ -166,38 +152,9 @@ def _field_csv(samples):
 
 
 def _engine(model, executable, mode, request='', points='', *, expected_sha256, cancel_requested=lambda: False):
-    executable = Path(executable).resolve()
-    compiler = executable.with_name('comsolcompile'+executable.suffix)
-    if not executable.is_file() or not compiler.is_file():
-        raise ValueError('Select comsolbatch with comsolcompile installed beside it')
-    with tempfile.TemporaryDirectory(prefix='saved-field-') as directory:
-        root = Path(directory)
-        copy = root / 'source.mph'
-        shutil.copyfile(model, copy)
-        if model_digest(copy) != expected_sha256:
-            raise ValueError('Model changed while making the private snapshot; inspect again')
-        source = root / 'SavedFieldSampler.java'
-        shutil.copyfile(Path(__file__).with_name(source.name), source)
-        compiled = run_cancellable_process([str(compiler), str(source)], cwd=root, timeout=120, cancel_requested=cancel_requested)
-        if compiled.returncode or not source.with_suffix('.class').is_file():
-            raise RuntimeError('COMSOL field helper compilation failed: '+(compiled.stderr or compiled.stdout)[-1200:])
-        payloads = [base64.b64encode(gzip.compress(value.encode('utf-8'), mtime=0)).decode('ascii') for value in (request, points)]
-        command = [str(executable), '-inputfile', str(source.with_suffix('.class')),
-                 '-batchlog', str(root/'engine.log'), '-nosave', '-np', '1', '-prodargs', str(copy), mode,
-                 payloads[0], '-', payloads[1]]
-        if sum(len(argument)+3 for argument in command) > 26000:
-            raise ValueError('Sampling request is too large for the COMSOL command line; use fewer sensors/states')
-        result = run_cancellable_process(command,
-                 cwd=root, timeout=300, cancel_requested=cancel_requested)
-        log = (root/'engine.log').read_text(encoding='utf-8', errors='replace') if (root/'engine.log').exists() else ''
-        for transcript in (result.stdout, log):
-            match = re.search(r'^FIELD_SAMPLING_BEGIN\r?\n(.*?)^FIELD_SAMPLING_OK\r?$', transcript, re.MULTILINE | re.DOTALL)
-            if not result.returncode and match:
-                raw = match.group(1).replace('\r\n', '\n').encode('utf-8')
-                if len(raw) > 5_000_000:
-                    raise ValueError('Engine output exceeds 5 MB')
-                return raw
-        raise RuntimeError('Saved-field operation failed (no solve started): '+(log+'\n'+result.stderr+'\n'+result.stdout)[-4000:])
+    return run_helper(model, executable, 'SavedFieldSampler', mode, request, points,
+                      expected_sha256=expected_sha256, cancel_requested=cancel_requested,
+                      runner=run_cancellable_process)
 
 
 def inspect_saved_fields(model, executable, *, cancel_requested=lambda: False):

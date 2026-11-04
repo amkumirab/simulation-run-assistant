@@ -8,6 +8,14 @@ from simulation_assistant.process_control import run_cancellable_process
 
 
 class ProcessControlTests(unittest.TestCase):
+    def test_non_utf8_child_diagnostics_do_not_crash_capture(self):
+        completed = run_cancellable_process(
+            [sys.executable, '-c', "import sys; sys.stderr.buffer.write(b'compile error: \\xa0 marker')"],
+            cwd='.', timeout=5, cancel_requested=lambda: False,
+        )
+        self.assertIsInstance(completed.stderr, str)
+        self.assertIn('marker', completed.stderr)
+
     def test_returns_completed_process_output(self) -> None:
         completed = run_cancellable_process(
             [sys.executable, "-c", "print('ready')"],

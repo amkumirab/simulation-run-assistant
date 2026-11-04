@@ -36,6 +36,7 @@ def run_cancellable_process(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        errors="replace",
         creationflags=creationflags,
     )
     deadline = time.monotonic() + timeout
