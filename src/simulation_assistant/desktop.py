@@ -991,6 +991,8 @@ class DesktopApp:
                   style="CardText.TLabel").pack(side="left", padx=12)
         ttk.Button(field_controls, text="Model brief", style="Secondary.TButton",
                    command=self._open_model_brief).pack(side="left", padx=8)
+        ttk.Button(field_controls, text="Geometry inspector", style="Secondary.TButton",
+                   command=self._open_geometry_inspector).pack(side="left")
 
         self.jobs_tree = ttk.Treeview(
             card,
@@ -1333,6 +1335,10 @@ class DesktopApp:
     def _open_model_brief(self) -> None:
         from simulation_assistant.model_brief_ui import ModelBriefDialog
         ModelBriefDialog(self.root)
+
+    def _open_geometry_inspector(self) -> None:
+        from simulation_assistant.geometry_ui import GeometryDialog
+        GeometryDialog(self.root)
 
     def _open_design_campaign(self) -> None:
         from simulation_assistant.design_campaign_ui import DesignCampaignDialog

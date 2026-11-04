@@ -214,20 +214,29 @@ class ModelBriefDialog:
 
     def load(self):
         path = filedialog.askopenfilename(parent=self.window, title='Load model brief', filetypes=[('Model brief', '*.json')])
-        if not path or not self._can_discard():
+        if not path:
             return
         try:
             brief = load_model_brief(path)
         except (ValueError, OSError) as exc:
             self.status.set(f'Could not load; current work kept: {exc}')
             return
+        self.set_brief(brief, saved=True)
+
+    def set_brief(self, brief, *, saved=False):
+        """Open a validated draft, asking before replacing unsaved user edits."""
+        validate_brief(brief)
+        if not self._can_discard():
+            return False
         self.entries = brief.entries
         for name, variable in self.header.items():
             variable.set(getattr(brief, name))
         self._reset_entry()
-        self._saved = self._snapshot()
+        if saved:
+            self._saved = self._snapshot()
         self._refresh()
-        self.status.set(f'Loaded {len(self.entries)} entries. All values and confirmation statuses are user-declared.')
+        self.status.set(f'{len(self.entries)} entries. ' + ('Loaded saved brief.' if saved else 'New unsaved proposal; review and save JSON.'))
+        return True
 
     def close(self):
         if self._can_discard():
