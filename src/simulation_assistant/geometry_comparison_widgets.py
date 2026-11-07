@@ -9,7 +9,10 @@ def table(parent, columns, height=7):
     frame.columnconfigure(0,weight=1)
     tree = ttk.Treeview(frame,columns=tuple(name for name,_ in columns),show='headings',height=height,selectmode='browse')
     for name,width in columns:
-        tree.heading(name,text=name.replace('_',' ').title())
+        heading = name.replace('_', ' ').title()
+        if name.endswith('_mm'):
+            heading = name[:-3].replace('_', ' ').title()+' (mm)'
+        tree.heading(name,text=heading)
         tree.column(name,width=width,minwidth=65,stretch=name in ('part','quantity'))
     tree.grid(row=0,column=0,sticky='nsew')
     for orient,row,col in (('vertical',0,1),('horizontal',1,0)):

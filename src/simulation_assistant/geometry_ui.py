@@ -34,6 +34,7 @@ class GeometryDialog:
         body.columnconfigure(0, weight=1)
         body.rowconfigure(5, weight=1)
         ttk.Label(body, text='Geometry & Layer Inspector', style='CardTitle.TLabel').grid(row=0, column=0, sticky='w')
+        ttk.Button(body, text='Compare snapshots', command=self.open_comparison, style='Secondary.TButton').grid(row=0,column=0,sticky='e')
         notice = ttk.Label(body, text='READ ONLY  |  Saved geometry, not a historical sweep state. Bounding envelopes are approximate; '
                            'not CAD solids, collision checks or certified clearance.', style='CardText.TLabel', wraplength=1150)
         notice.grid(row=1, column=0, sticky='ew', pady=(6, 10))
@@ -256,3 +257,10 @@ class GeometryDialog:
     def close(self):
         self.stop.set()
         self.window.destroy()
+
+    def open_comparison(self):
+        from simulation_assistant.geometry_comparison_ui import GeometryComparisonDialog
+        dialog=GeometryComparisonDialog(self.window.master)
+        if self.data is not None:
+            dialog.set_snapshot('baseline',self.data,'From inspector snapshot')
+        return dialog
