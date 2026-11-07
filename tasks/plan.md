@@ -114,3 +114,23 @@ logic before UI, preserve existing field tests at the shared transport seam,
 verify isolated native interactions and source digests, then run complete tests,
 build and publication checks. Publication to the existing GitHub repository is
 authorized; private MPH files and production databases are not publication input.
+
+## Geometry comparison increment
+
+Implement `docs/GEOMETRY_COMPARISON.md`: prove explicit pair identity and
+comparable-frame declarations before signed envelope metrics, then portable
+CSV evidence, then the native load/map/compare/export workflow. Reuse the
+snapshot loader and export primitives. Validate original/overlap/control stored
+data, minimum/normal native layouts and pending/stale/discard protections.
+No fresh solve, MPH change, dependency, schema or external publication. Prepare
+four logical slices (math, CSV, UI, examples/docs), keeping related tests with
+each implementation for final review rather than committing unfinished work.
+
+Publication authorized on 2026-11-07 in seven independently checked commits:
+comparison calculations, snapshot content identity, CSV evidence, standalone
+native workspace, inspector integration, real replay/captures, and release
+guides/version metadata. This replaces the preparation's four-slice grouping.
+Preserve every behavior assertion when separating tests by implementation
+boundary; add direct action coverage for the inspector entry point. Verify each
+exact staged snapshot, then push without rewriting history and check remote CI.
+Publish additive version 0.37.0; no tag, separate package release or new solve.

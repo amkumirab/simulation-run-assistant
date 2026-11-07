@@ -518,6 +518,12 @@ clearance. The [geometry inspector guide](docs/GEOMETRY_INSPECTOR.md) includes
 real original/overlap/control snapshots, actual native captures and license-free
 offline replay; no private MPH files are published.
 
+From the inspector, select **Compare snapshots** to map corresponding parts in
+two stored models explicitly, compare signed global-envelope changes in mm and
+export a traceable CSV. No identity is inferred from domain IDs. See the
+[geometry comparison guide](docs/GEOMETRY_COMPARISON.md) for frame declarations,
+comparison thresholds and worked Original/Overlap/Control examples.
+
 For bounded input exploration, open **Runs > Experiment planner** in the native
 app. Configure continuous quantities and integer counts, choose a state budget
 and seed, inspect the exact points, then save or explicitly queue/run them.

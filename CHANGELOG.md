@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.37.0] - 2026-11-07
+
+### Added
+
+- Native geometry comparison with explicit one-to-one part mappings and a
+  required comparable-global-frame declaration
+- Signed mm differences for global bounds, envelope midpoints and spans with
+  an absolute comparison threshold and explicit unmapped-domain coverage
+- Atomic, spreadsheet-safe comparison CSV retaining source and snapshot hashes
+- Original/Overlap/Control replay with actual native captures and workflow checks
+
 ## [0.36.0] - 2026-11-04
 
 ### Added

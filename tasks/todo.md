@@ -277,3 +277,87 @@ no test assertion, skip policy or quality threshold was removed.
 Final gates include the complete example suite, compilation, wheel resource checks, exact staged
 English/private-path/credential/attribution scans and remote CI. Live COMSOL and
 native-window checks run locally; headless CI does not replace them.
+
+## Geometry comparison tasks
+
+- [x] Explicit one-to-one pairs, frame declaration and signed mm metrics.
+  - Verify: core tests, unit normalization, invalid identity, threshold edges.
+- [x] Traceable CSV with snapshot fingerprints and atomic error protection.
+  - Verify: exact values/coverage, formula escaping, forged result rejection.
+- [x] Native comparison workflow and guarded integration with Geometry inspector.
+  - Verify: isolated load/map/compare/export, edits, discard, keyboard and sizes.
+- [x] Worked real snapshots, native captures, documentation and full verification.
+  - Verify: known original/overlap/control differences, full suite and wheel.
+
+### Geometry comparison preparation record (2026-11-05)
+
+Stored Original/Overlap and Original/Control workflows each verified 12 explicit
+pairs, 6 changed side-stack envelopes, air domain 1 unmapped on each side and
+144 exported metric rows. Left RX midpoint shifts are about +140 mm X / +20 mm
+Z for Overlap, and 0 mm X / +20 mm Z for Control. These are existing saved
+geometry envelopes, not fresh solves or performance/clearance validation.
+
+Native replays passed 1000x760 and 1240x850 checks, pair selection with Enter,
+CSV export and isolated empty-queue checks. Four real window captures were
+produced for the English guide. The replay originally sent a keyboard event
+before its notebook page was mapped; waiting for the page update corrected
+the test harness. The focused native keyboard regression independently passes.
+
+Additional guards cover renumbered domains, unique one-to-one mapping, missing
+frame declaration, finite absolute thresholds (including inclusive boundary),
+unit metadata, 256 mappings, formula text, modified results, failed atomic
+replacement, pending input, failed/declined loads and failed/cancelled saves.
+The complete suite passed 370 tests before the final limit/documentation checks
+were added. Final completed-tree verification passed all 373 tests in 48.032 s,
+with no traceback, ignored exception or stale Tk callback diagnostics in the
+captured run. New Python files also parsed with the Python 3.10 syntax target.
+
+Compilation and the development wheel build passed. An isolated installation
+under ignored artifacts imported its own packaged modules and passed the full
+native Control replay, rather than using editable source. Runtime dependencies,
+database schema, solver adapters and original MPH files are unchanged. No new
+simulation, dependency installation, source save or remote write was performed.
+The package version stays 0.36.0 with an Unreleased changelog until publication.
+Wheel archive verification matched all current comparison, snapshot and
+inspector modules byte-for-byte and confirmed no new runtime requirements.
+The working publication candidates passed English text, common credential,
+private local-path, attribution and whitespace checks. Five-axis review found
+no blocker in this bounded scope. User label/selection privacy and coordinate
+frame correctness remain explicit responsibilities; no engineering certification
+or automatic whole-application session recovery is implied.
+
+Prepared grouping for explicit finalization: comparison math + core tests;
+snapshot fingerprint/CSV + persistence tests; native workspace/integration +
+desktop tests; real replay/captures/guides + documentation checks. No commit,
+push, release or tag is part of this preparation request.
+
+### Geometry comparison publication (2026-11-07)
+
+Commit and push authorized in seven meaningful slices. Existing persistence,
+integration and guide assertions are separated into focused test modules so
+each commit remains independently executable. Snapshot checksum and content
+coverage now have separate cases; the inspector's actual Compare snapshots
+button has an additional direct integration case. No behavior assertion is
+removed or weakened. Version 0.37.0 aligns package metadata and the changelog
+with the actual publication date. Source models and production data remain
+outside the publication input. Every exact staged snapshot must pass full
+regressions, compilation and English/private-path/credential/attribution checks
+before finalization; native replay and the final wheel are verified locally,
+while Python 3.10/3.12 headless workflows are checked remotely.
+
+The first five staged snapshots passed 359, 361, 364, 371 and 373 local tests,
+respectively, and compilation/publication scans. The native entry-point review
+also reproduced incorrect title-casing of millimetre headings; explicit `mm`
+headings and their regression assertions fixed it before final integration.
+Original/Overlap and Original/Control native replays were repeated on 2026-11-07
+and all four captures refreshed from the actual windows. Each run retained 12
+explicit mappings, 6 changed envelopes and 144 metric rows, with an isolated
+empty queue. These remain stored geometry evidence, not fresh COMSOL solves.
+
+The final publication gate tests all source-independent slices, builds the
+0.37.0 wheel from the exact staged tree, verifies packaged module/Java-resource
+bytes and zero runtime requirements, and runs both native examples from an
+isolated installation. No test skip policy, assertion or quality gate is lowered.
+Pushes retain normal history; no tag or separate package-service release is
+created. Remote workflow conclusions and final local/remote identity are checked
+after the seventh push.
