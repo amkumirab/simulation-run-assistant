@@ -51,10 +51,16 @@ def _digest(document):
     return hashlib.sha256(json.dumps(document, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()
 
 
+def snapshot_digest(data: GeometrySnapshot) -> str:
+    """Canonical portable content identity, distinct from the source MPH hash."""
+    validate_snapshot(data)
+    return _digest({'schema': SCHEMA, **asdict(data)})
+
+
 def save_snapshot(path, data):
     validate_snapshot(data)
     document = {'schema': SCHEMA, **asdict(data)}
-    document['snapshot_sha256'] = _digest(document)
+    document['snapshot_sha256'] = snapshot_digest(data)
     text = json.dumps(document, indent=2, allow_nan=False)+'\n'
     if len(text.encode('utf-8')) > 1_000_000:
         raise ValueError('Snapshot exceeds 1 MB')
