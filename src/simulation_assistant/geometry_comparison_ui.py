@@ -7,11 +7,14 @@ from simulation_assistant.geometry_comparison_files import export_comparison_csv
 from simulation_assistant.geometry_files import load_snapshot, snapshot_digest
 from simulation_assistant.geometry_inspector import validate_snapshot
 from simulation_assistant.geometry_comparison_widgets import build_comparison_widgets
+from simulation_assistant.geometry_comparison_session_ui import ComparisonSessions
 
 
 class GeometryComparisonDialog:
     def __init__(self,parent):
         self.sources={'baseline':None,'candidate':None}
+        self.snapshot_paths=dict.fromkeys(self.sources)
+        self.sessions=ComparisonSessions(self)
         self.pairs,self.result,self.closed=(),None,False
         self.window=tk.Toplevel(parent)
         self.window.title('Geometry Comparison')
@@ -29,7 +32,7 @@ class GeometryComparisonDialog:
         self.domain_details={side:tk.StringVar(value='Select a domain to inspect its selection tags and bounds.') for side in self.sources}
         self.status=tk.StringVar(value='Load two stored snapshots. Explicit mapping and comparable-frame declaration are required.')
         build_comparison_widgets(self)
-        self._saved=self.signature()
+        self._saved=self.session_signature()
         self.traces=[(v,v.trace_add('write',self.invalidate)) for v in (*self.form.values(),self.frames,self.threshold)]
         self.traces.append((self.result_label,self.result_label.trace_add('write',self.show_metrics)))
         self.label_entry.focus_set()
@@ -40,8 +43,11 @@ class GeometryComparisonDialog:
     def pending(self):
         return any(v.get() for v in self.form.values())
 
+    def session_signature(self):
+        return (*self.sources.values(),self.pairs,self.threshold.get(),tuple(v.get() for v in self.form.values()))
+
     def dirty(self):
-        return bool(self.pairs or self.pending()) and self.signature()!=self._saved
+        return bool(all(self.sources.values()) or self.pairs or self.pending()) and self.session_signature()!=self._saved
 
     def invalidate(self,*_args):
         if self.closed:
@@ -67,21 +73,27 @@ class GeometryComparisonDialog:
         if (self.pairs or self.pending()) and not messagebox.askyesno('Replace snapshot','Replacing either snapshot clears all mapped pairs and unapplied fields. Continue?',parent=self.window):
             return False
         self.sources[side]=data
+        self.snapshot_paths[side]=None
         self.pairs=()
         self.pairs_tree.delete(*self.pairs_tree.get_children())
         self.frames.set(False)
         self.clear_form()
+        self.show_source(side,origin)
+        self.status.set('Snapshot loaded. Domain IDs and selection tags do not establish correspondence automatically.')
+        return True
+
+    def show_source(self,side,origin):
+        data=self.sources[side]
         self.domain_boxes[side].configure(values=tuple(str(p.domain) for p in data.parts))
         self.source_info[side].set(f'{origin} | {data.component}/{data.geometry} | {len(data.parts)} domains | original unit {data.length_unit}\n'
                                    f'Model SHA: {data.source_sha256}\nSnapshot SHA: {snapshot_digest(data)}')
-        self.status.set('Snapshot loaded. Domain IDs and selection tags do not establish correspondence automatically.')
-        return True
 
     def load(self,side):
         path=filedialog.askopenfilename(parent=self.window,title='Load '+side+' geometry snapshot',filetypes=[('Geometry snapshot','*.json')])
         if path:
             try:
-                self.set_snapshot(side,load_snapshot(path),Path(path).name)
+                if self.set_snapshot(side,load_snapshot(path),Path(path).name):
+                    self.snapshot_paths[side]=Path(path).resolve()
             except (ValueError,OSError) as exc:
                 self.status.set('Load failed; current work kept: '+str(exc)[-400:])
 
@@ -176,16 +188,14 @@ class GeometryComparisonDialog:
             if not path:
                 return False
             export_comparison_csv(path,self.result)
-            self._saved=self.signature()
-            self.window.title('Geometry Comparison')
-            self.status.set('Comparison CSV saved with explicit mappings, coverage and both source/content hashes. No model path or MPH included.')
+            self.status.set('Comparison CSV saved with mappings, coverage and source/content hashes. Use Save session to retain reloadable inputs.')
             return True
         except (ValueError,OSError) as exc:
             self.status.set('Export blocked: '+str(exc)[-400:])
             return False
 
     def close(self):
-        if not self.dirty() or messagebox.askyesno('Unsaved comparison','Discard mappings or unapplied fields not retained in the latest exported CSV?',parent=self.window):
+        if not self.dirty() or messagebox.askyesno('Unsaved comparison session','Discard comparison inputs not retained in the latest saved session, including unapplied fields?',parent=self.window):
             self.window.destroy()
 
     def destroyed(self,event):

@@ -53,7 +53,8 @@ class GeometryComparisonDesktopTests(unittest.TestCase):
             self.assertTrue(self.dialog.export())
         with path.open(newline='') as stream:
             self.assertEqual(len(list(csv.DictReader(stream))),12)
-        self.assertFalse(self.dialog.dirty())
+        # A result CSV does not retain reloadable comparison inputs.
+        self.assertTrue(self.dialog.dirty())
         self.assertEqual(self.app.store.page_jobs().total,0)
         self.assertFalse(self.errors)
 
