@@ -7,6 +7,7 @@ from unittest.mock import patch
 from simulation_assistant.geometry_files import load_snapshot
 from simulation_assistant.geometry_comparison import DomainPair, compare_geometry
 from simulation_assistant.geometry_comparison_files import export_comparison_csv
+from simulation_assistant.geometry_comparison_sessions import GeometryComparisonSession, load_session, save_session
 
 LABELS = ('Left RX shield','Left RX ferrite','Left RX coil','TX shield','Center RX shield',
           'TX ferrite','Center RX ferrite','TX coil','Center RX coil','Right RX shield',
@@ -21,6 +22,16 @@ def check(value,message):
         raise RuntimeError(message)
 
 
+def capture(root,dialog,folder,name):
+    import ctypes
+    from PIL import ImageGrab
+    folder.mkdir(parents=True,exist_ok=True)
+    dialog.window.lift()
+    root.update()
+    handle=ctypes.windll.user32.GetAncestor(dialog.window.winfo_id(),2)
+    ImageGrab.grab(window=handle).save(folder/name)
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--candidate',choices=('overlap','control'),default='overlap')
@@ -28,6 +39,7 @@ def main():
     parser.add_argument('--output-dir',type=Path,help='Retain CSV in this folder; refuse existing report overwrite')
     parser.add_argument('--capture-dir',type=Path,help='Optional actual Windows native captures using existing Pillow')
     parser.add_argument('--desktop',action='store_true',help='Keep the isolated native example open')
+    parser.add_argument('--session-roundtrip',action='store_true',help='Save/reopen portable inputs and require fresh frame confirmation')
     args=parser.parse_args()
     if args.headless and (args.capture_dir or args.desktop):
         parser.error('Native captures/desktop cannot be combined with --headless')
@@ -48,8 +60,18 @@ def main():
         output.mkdir(parents=True,exist_ok=True)
         report=output/('original-vs-'+args.candidate+'.csv')
         check(not report.exists(),'Choose an output directory without an existing report')
+        session_path=output/('original-vs-'+args.candidate+'-session.json')
+        if args.session_roundtrip:
+            check(not session_path.exists(),'Choose an output directory without an existing session')
         if args.headless:
             export_comparison_csv(report,result)
+            if args.session_roundtrip:
+                session=GeometryComparisonSession(base,candidate,pairs)
+                save_session(session_path,session)
+                restored=load_session(session_path)
+                check(restored==session,'Session inputs changed during roundtrip')
+                check(compare_geometry(restored.baseline,restored.candidate,restored.pairs,
+                      comparable_frames=True,tolerance_mm=restored.tolerance_mm)==result,'Recomputed session differs')
         else:
             import tkinter as tk
             from simulation_assistant.desktop import DesktopApp
@@ -87,16 +109,30 @@ def main():
                 check(dialog.result_label.get()=='Left RX coil','Wrong selected pair')
                 with patch('simulation_assistant.geometry_comparison_ui.filedialog.asksaveasfilename',return_value=str(report)):
                     check(dialog.export(),dialog.status.get())
+                if args.session_roundtrip:
+                    with patch('tkinter.filedialog.asksaveasfilename',return_value=str(session_path)):
+                        check(dialog.sessions.save(),dialog.status.get())
+                    check(not dialog.dirty(),'Saved inputs still marked dirty')
+                    dialog.threshold.set('1')
+                    with patch('tkinter.filedialog.askopenfilename',return_value=str(session_path)), \
+                            patch('tkinter.messagebox.askyesno',return_value=True):
+                        check(dialog.sessions.load(),dialog.status.get())
+                    check(not dialog.frames.get() and dialog.result is None,'Loaded session trusted previous approval/results')
+                    check(not dialog.metrics_tree.get_children() and not dialog.dirty(),'Loaded session state is stale or dirty')
+                    check(dialog.pairs==pairs,'Session mapping changed')
+                    if args.capture_dir:
+                        capture(root,dialog,args.capture_dir,'geometry-session-'+args.candidate+'-loaded.png')
+                    check(not dialog.compare(),'Comparison accepted without fresh frame confirmation')
+                    dialog.frames.set(True)
+                    check(dialog.compare(),dialog.status.get())
+                    check(dialog.result==result and not dialog.dirty(),'Recomputed session differs or changed saved inputs')
+                    dialog.result_label.set('Left RX coil')
                 if args.capture_dir:
-                    import ctypes
-                    from PIL import ImageGrab
-                    args.capture_dir.mkdir(parents=True,exist_ok=True)
-                    for tab,name in ((0,'mapping'),(1,'differences')):
+                    captures=((1,'recomputed'),) if args.session_roundtrip else ((0,'mapping'),(1,'differences'))
+                    for tab,name in captures:
                         dialog.tabs.select(tab)
-                        dialog.window.lift()
-                        root.update()
-                        handle=ctypes.windll.user32.GetAncestor(dialog.window.winfo_id(),2)
-                        ImageGrab.grab(window=handle).save(args.capture_dir/('geometry-comparison-'+args.candidate+'-'+name+'.png'))
+                        prefix='geometry-session-' if args.session_roundtrip else 'geometry-comparison-'
+                        capture(root,dialog,args.capture_dir,prefix+args.candidate+'-'+name+'.png')
                 check(not errors,'Native callback errors: '+str(errors))
                 check(app.store.page_jobs().total==0 and app.connection_report is None,'Production workflow was touched')
                 if args.desktop:
@@ -115,6 +151,8 @@ def main():
         with report.open(encoding='utf-8',newline='') as stream:
             check(len(list(csv.DictReader(stream)))==144,'CSV must contain all 12 metrics for 12 explicit pairs')
         print('PASS: original vs '+args.candidate+' | 12 explicit pairs, 6 changed, air unmapped | 144 CSV metrics | no model/solver actions')
+        if args.session_roundtrip:
+            print('PASS: portable session roundtrip | embedded snapshots and mappings retained | fresh comparison required')
 
 
 if __name__=='__main__':
