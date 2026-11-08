@@ -57,10 +57,17 @@ def snapshot_digest(data: GeometrySnapshot) -> str:
     return _digest({'schema': SCHEMA, **asdict(data)})
 
 
-def save_snapshot(path, data):
+def snapshot_document(data: GeometrySnapshot) -> dict:
+    """Return a standalone v1 document, also suitable for embedding in sessions."""
     validate_snapshot(data)
     document = {'schema': SCHEMA, **asdict(data)}
+    document['parts'] = [{**asdict(part), 'bounds_m': list(part.bounds_m)} for part in data.parts]
     document['snapshot_sha256'] = snapshot_digest(data)
+    return document
+
+
+def save_snapshot(path, data):
+    document = snapshot_document(data)
     text = json.dumps(document, indent=2, allow_nan=False)+'\n'
     if len(text.encode('utf-8')) > 1_000_000:
         raise ValueError('Snapshot exceeds 1 MB')
@@ -83,9 +90,18 @@ def load_snapshot(path):
         raise ValueError('Snapshot exceeds 1 MB')
     try:
         document = json.loads(raw.decode('utf-8'), object_pairs_hook=_object)
+        return read_snapshot_document(document)
+    except (UnicodeError, TypeError, KeyError, RecursionError, OverflowError) as exc:
+        raise ValueError('Invalid geometry snapshot') from exc
+
+
+def read_snapshot_document(document: dict) -> GeometrySnapshot:
+    """Validate a v1 document without modifying the caller's object."""
+    try:
         if (not isinstance(document, dict) or set(document) != {'schema', 'snapshot_sha256', *GeometrySnapshot.__dataclass_fields__}
                 or document['schema'] != SCHEMA):
             raise ValueError('Unsupported geometry snapshot')
+        document = dict(document)
         digest = document.pop('snapshot_sha256')
         if _digest(document) != digest:
             raise ValueError('Geometry snapshot failed integrity check')
