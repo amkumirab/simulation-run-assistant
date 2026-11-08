@@ -78,15 +78,19 @@ def _quantities(bounds):
             *(bounds[i+1]-bounds[i] for i in (0, 2, 4)))
 
 
+def validate_tolerance_mm(tolerance_mm: float) -> None:
+    if (type(tolerance_mm) not in (int, float) or not 0 <= tolerance_mm <= 1000
+            or not math.isfinite(tolerance_mm)):
+        raise ValueError('Comparison threshold must be a finite number from 0 to 1000 mm')
+
+
 def compare_geometry(baseline: GeometrySnapshot, candidate: GeometrySnapshot,
                      pairs: tuple[DomainPair, ...], *, comparable_frames: bool,
                      tolerance_mm: float = .01) -> GeometryComparison:
     validate_pairs(baseline, candidate, pairs)
     if comparable_frames is not True:
         raise ValueError('Explicitly declare comparable global coordinate frames first')
-    if (type(tolerance_mm) not in (int, float) or not 0 <= tolerance_mm <= 1000
-            or not math.isfinite(tolerance_mm)):
-        raise ValueError('Comparison threshold must be a finite number from 0 to 1000 mm')
+    validate_tolerance_mm(tolerance_mm)
     base = {p.domain: p for p in baseline.parts}
     candidate_index = {p.domain: p for p in candidate.parts}
     differences = []
