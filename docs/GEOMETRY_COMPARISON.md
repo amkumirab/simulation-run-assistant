@@ -27,14 +27,20 @@
    signed change, threshold and both sources. Export schema is
    `wpt.geometry-comparison.v1`. Unmapped IDs and counts remain explicit; CSV
    coverage does not certify that all real parts were identified correctly.
+8. Use **Save session** to retain both embedded snapshots, explicit pairs and
+   threshold in one JSON. **Load session** restores inputs without accepting any
+   old frame declaration or result. Review, confirm frames and compare again.
+   See [comparison sessions](GEOMETRY_COMPARISON_SESSIONS.md) for the workflow
+   and a real-snapshot roundtrip. A draft with zero pairs can also be saved.
 
 Changing a mapping, source, pending form, threshold or frame declaration clears
 the accepted result. Recompare before export. Failed loads/saves preserve work;
 source replacement and closing unsaved mappings ask permission. A CSV is a
 report, not a reloadable mapping session. Loading snapshots is not continuous
 monitoring of external model or JSON edits. Checksums are not authentication.
-Export needed reports before quitting the main application; this workspace
-does not provide automatic session recovery.
+Save needed sessions and reports before quitting the main application; this
+workspace does not provide automatic session recovery. CSV export does not mark
+session inputs saved; only Save session or Load session does so.
 Automatic source file paths and MPH data are not added to CSV. User-entered
 labels and selection tags can still contain confidential text; review them
 before sharing a report or screenshot.

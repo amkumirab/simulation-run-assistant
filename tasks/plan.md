@@ -134,3 +134,28 @@ Preserve every behavior assertion when separating tests by implementation
 boundary; add direct action coverage for the inspector entry point. Verify each
 exact staged snapshot, then push without rewriting history and check remote CI.
 Publish additive version 0.37.0; no tag, separate package release or new solve.
+
+## Geometry comparison sessions (2026-11-08)
+
+Implement `docs/GEOMETRY_COMPARISON_SESSIONS.md` in dependency order: reusable
+snapshot document conversion preserving v1 bytes; strict portable session
+persistence; native save/load lifecycle; real saved-snapshot replay and guides.
+Each slice has focused tests before expansion. Validate imported JSON before
+UI mutation and use atomic writes. Coordinate approval and cached results never
+cross the persistence boundary. CSV does not mark session inputs saved. Verify
+failure preservation, source-file overwrite protection and native layouts,
+then full regressions, compilation and isolated wheel execution. No models,
+production data, dependencies, version bump, commits or push in this preparation.
+
+Completed locally: 396 regressions, compilation, wheel/source-byte comparison,
+both installed native session replays and real loaded/recomputed captures.
+The separate imaging interpreter required an explicit source path; no runtime
+dependency was installed into the app. The session controller remains separate
+from comparison arithmetic and JSON validation.
+
+Local finalization is authorized in five dependency-ordered commits: snapshot
+documents; session persistence and threshold validation; native save/load;
+real replay and captures; guides and verification record. Keep related tests
+with each implementation. Check each exact staged tree independently, without
+borrowing future working-tree files. No push, release or tag is authorized by
+this local commit request; remote publication history remains unchanged.

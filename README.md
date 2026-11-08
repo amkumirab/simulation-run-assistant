@@ -523,6 +523,10 @@ two stored models explicitly, compare signed global-envelope changes in mm and
 export a traceable CSV. No identity is inferred from domain IDs. See the
 [geometry comparison guide](docs/GEOMETRY_COMPARISON.md) for frame declarations,
 comparison thresholds and worked Original/Overlap/Control examples.
+Use **Save session / Load session** to retain both snapshots, part mappings and
+threshold in one portable JSON. Reopened sessions require fresh coordinate-frame
+confirmation and comparison; CSV remains a separate report. See the
+[comparison session guide](docs/GEOMETRY_COMPARISON_SESSIONS.md).
 
 For bounded input exploration, open **Runs > Experiment planner** in the native
 app. Configure continuous quantities and integer counts, choose a state budget

@@ -361,3 +361,42 @@ isolated installation. No test skip policy, assertion or quality gate is lowered
 Pushes retain normal history; no tag or separate package-service release is
 created. Remote workflow conclusions and final local/remote identity are checked
 after the seventh push.
+
+### Geometry comparison sessions (2026-11-08)
+
+- [x] Snapshot document conversion preserves the existing format and checksum.
+  Verify pure conversion and existing snapshot persistence tests.
+- [x] Session codec roundtrips complete inputs and zero-pair drafts; rejects
+  corruption, invalid fields and oversized data without destructive writes.
+  Verify session unit/file tests and shared threshold regression tests.
+- [x] Native Save/Load restores inputs, resets approval/results and preserves
+  current work on failed/cancelled operations. CSV is not a session save.
+  Verify native workflow, dirty-state, source protection and layout tests.
+- [x] Real saved-model replay, English guide and actual native captures verified.
+  Full tests, compilation and isolated wheel replay pass; ready for review.
+
+Verification: 396 tests passed without skips or runtime diagnostics; compilation
+and wheel build passed. Both Original/Overlap and Original/Control native session
+roundtrips passed from an isolated wheel installation. The six changed runtime
+modules match wheel bytes exactly and metadata still has no runtime dependencies.
+Actual loaded/recomputed Overlap captures were visually reviewed. New content
+passed English/private-path/credential/attribution scans and `git diff --check`.
+Source models, existing snapshot fixtures, queue data and published version
+remain unchanged. The preparation stage did not commit, push, tag or release.
+
+### Geometry comparison session commit organization (2026-11-08)
+
+Local finalization is authorized in exactly five meaningful commits, preserving
+the implementation and related tests together:
+
+1. Reusable snapshot documents and v1 compatibility checks.
+2. Portable session persistence, shared threshold validation and corrupt-input tests.
+3. Native Save/Load lifecycle, stale-result guards and desktop tests.
+4. Reproducible real-snapshot roundtrip and actual native captures.
+5. User guides, changelog and verification record with documentation tests.
+
+Each exact staged tree is independently exported into ignored validation
+artifacts, tested and compiled before its commit. Publication scans cover the
+indexed content, not unstaged future files. No test assertion or skip policy is
+weakened. The published version stays 0.37.0 with an Unreleased changelog entry;
+no remote push, release or tag is part of this request.

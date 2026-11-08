@@ -7,7 +7,13 @@ from urllib.parse import unquote, urlsplit
 
 class GeometryComparisonDocumentationTests(unittest.TestCase):
     def test_guide_links_and_native_png_dimensions(self):
-        guide = Path(__file__).resolve().parents[1]/'docs/GEOMETRY_COMPARISON.md'
+        self.check_guide('GEOMETRY_COMPARISON.md')
+
+    def test_session_guide_links_and_real_native_captures(self):
+        self.check_guide('GEOMETRY_COMPARISON_SESSIONS.md')
+
+    def check_guide(self, name):
+        guide = Path(__file__).resolve().parents[1]/'docs'/name
         for target in re.findall(r'!?\[[^\]]*\]\(([^)]+)\)', guide.read_text(encoding='utf-8')):
             link = urlsplit(target)
             if not link.scheme and link.path:

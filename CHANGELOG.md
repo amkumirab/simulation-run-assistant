@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Added
+
+- Manual Save/Load for portable geometry comparison sessions with embedded
+  snapshots, explicit part mappings, threshold and nested integrity checks
+- Real saved-snapshot session replay, native captures and workflow guide
+
+### Changed
+
+- Reopened sessions require fresh coordinate-frame confirmation and recomputation
+- CSV reports no longer clear the unsaved-session indicator; save session JSON
+  to retain reloadable inputs, including drafts with no pairs yet
+
 ## [0.37.0] - 2026-11-07
 
 ### Added
