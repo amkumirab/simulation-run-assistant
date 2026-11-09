@@ -159,3 +159,29 @@ real replay and captures; guides and verification record. Keep related tests
 with each implementation. Check each exact staged tree independently, without
 borrowing future working-tree files. No push, release or tag is authorized by
 this local commit request; remote publication history remains unchanged.
+
+## Sensor placement preview (2026-11-09)
+
+Implement `docs/SENSOR_PLACEMENT.md` in four verifiable slices: validated pure
+XY/XZ projection; deterministic SVG/Canvas drawing with numeric evidence;
+native load/select/declare/export and existing editor entry points; then real
+stored-geometry replay, captures, guide and full regression/build verification.
+Keep model geometry, sensor layouts and frame approval separate. Reuse existing
+strict loaders and atomic writer, not a new persistence format. Source changes
+clear approval; no field readings or scientific clearance claims. No commits
+or external publication in this preparation step.
+
+Completed with 421 passing tests, compiled/built/installed package, isolated
+native Original replay, offline Overlap/Control checks, actual native captures
+and independently rendered SVG review. Final visual review reduced coincident
+marker/label ambiguity and made illustrative source status visible in the views
+tab. Numeric review added scale-first normalization for subnormal input axes.
+The native table and SVG use the same unit-axis calculation; existing field
+analysis behavior is intentionally untouched. Source fixtures/models, published
+version and the five existing local commits remain unchanged.
+
+Local finalization now follows four meaningful dependency-ordered commits,
+keeping related behavior assertions with each implementation and verifying the
+exact index without future working-tree inputs. Recheck the final wheel and
+isolated native/offline examples before the documentation commit. Preserve
+source fixtures and research files; no remote publication or version bump.

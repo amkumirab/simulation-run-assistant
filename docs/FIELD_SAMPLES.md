@@ -86,6 +86,10 @@ sim-assistant desktop
 
 ## Desktop walkthrough
 
+For positions/directions beside saved geometry (without field readings), use
+**Sensor placement** after applying a layout. See the
+[placement preview guide](SENSOR_PLACEMENT.md) for frame declarations and SVG export.
+
 1. Open **Runs > Field samples**; no COMSOL connection is needed for this offline
    workspace. Enter every metadata field in **Field data**. Labels accept 1-80
    ASCII letters/numbers, spaces, underscores, dots and hyphens, not local paths.

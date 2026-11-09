@@ -1,5 +1,9 @@
 # Geometry & Layer Inspector
 
+Use **Sensor placement** to open an independent read-only XY/XZ review of
+copied sensor positions against selected envelopes. See the
+[sensor placement guide](SENSOR_PLACEMENT.md); no field or clearance inference.
+
 ## Use the native inspector
 
 This workspace answers: which saved domains are present, where are their global

@@ -400,3 +400,43 @@ artifacts, tested and compiled before its commit. Publication scans cover the
 indexed content, not unstaged future files. No test assertion or skip policy is
 weakened. The published version stays 0.37.0 with an Unreleased changelog entry;
 no remote push, release or tag is part of this request.
+
+### Sensor placement preview (2026-11-09)
+
+- [x] Pure XY/XZ projections validate sources, explicit domains and frames;
+  equal physical scale and correctly projected 3D axes pass unit tests.
+- [x] Shared Canvas/SVG drawing and atomic SVG export preserve provenance,
+  exact numeric sensors and warnings; escaping and failure tests pass.
+- [x] Native preview loads copies, clears stale approval, synchronizes sensor
+  selection and exports only accepted inputs; both editor actions are tested.
+- [x] Real saved-geometry replay with illustrative sensors, actual captures,
+  English guides, full tests, compilation and installed-wheel replay pass.
+
+Verification: 421 tests passed without skips or runtime diagnostics, including
+subnormal axis normalization, 256-sensor vector export, copied editor entry
+points and minimum/normal native layouts. Compilation and wheel build passed;
+all six affected runtime modules match packaged bytes and no runtime dependency
+was added. The isolated installed package passed native Original replay and
+headless Overlap/Control replays. Both actual native captures and the separately
+rendered static SVG were visually reviewed; the worked SVG matches the native
+export exactly. Image dimensions/metadata, English/private-path/credential/
+attribution checks and `git diff --check` passed. Existing geometry/field
+fixtures and all source models remain unchanged. Sensor example positions are
+explicitly illustrative, not measured placements or field results. Prepared
+only; no commit, push, version bump, release or tag was performed at that stage.
+
+### Sensor placement local finalization (2026-11-09)
+
+Finalization is authorized in four independently verified commits: projection
+and SVG with unit/file tests; native review and editor integration with desktop
+tests; worked replay/captures with example checks; then guides and validation
+record with documentation checks. Export each exact indexed tree to ignored
+validation artifacts and require full regressions and compilation before its
+commit. Preserve the previous five local session commits without rewriting
+history. No push, version bump, tag or separate release is authorized here.
+
+The first three exact indexed trees passed 410, 419 and 420 tests respectively,
+with clean runtime diagnostics and compilation. Native PNG metadata and the
+SVG's explicit illustrative-layout/source evidence were checked again. The
+final documentation tree retains the full 421-test suite; rebuild and inspect
+its wheel and run isolated installed examples before recording that commit.

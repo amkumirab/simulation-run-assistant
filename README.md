@@ -528,6 +528,12 @@ threshold in one portable JSON. Reopened sessions require fresh coordinate-frame
 confirmation and comparison; CSV remains a separate report. See the
 [comparison session guide](docs/GEOMETRY_COMPARISON_SESSIONS.md).
 
+Choose **Sensor placement** in Geometry inspector or Field samples to preview
+copied sensor positions/directions alongside explicitly selected geometry
+envelopes in XY and XZ. Confirm comparable global frames before drawing or
+exporting a traceable SVG. This is not CAD, clearance or a field/MTJ response.
+See the [placement guide and real-geometry example](docs/SENSOR_PLACEMENT.md).
+
 For bounded input exploration, open **Runs > Experiment planner** in the native
 app. Configure continuous quantities and integer counts, choose a state budget
 and seed, inspect the exact points, then save or explicitly queue/run them.

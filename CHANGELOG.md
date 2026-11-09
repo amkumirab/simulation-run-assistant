@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Native Sensor Placement Preview with explicit coordinate-frame declaration,
+  equal-scale XY/XZ envelopes, sensor-axis projections and independent editor inputs
+- Traceable SVG placement images and real saved-geometry replay with clearly
+  illustrative sensor positions, actual native captures and a workflow guide
 - Manual Save/Load for portable geometry comparison sessions with embedded
   snapshots, explicit part mappings, threshold and nested integrity checks
 - Real saved-snapshot session replay, native captures and workflow guide
