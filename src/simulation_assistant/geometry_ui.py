@@ -34,7 +34,10 @@ class GeometryDialog:
         body.columnconfigure(0, weight=1)
         body.rowconfigure(5, weight=1)
         ttk.Label(body, text='Geometry & Layer Inspector', style='CardTitle.TLabel').grid(row=0, column=0, sticky='w')
-        ttk.Button(body, text='Compare snapshots', command=self.open_comparison, style='Secondary.TButton').grid(row=0,column=0,sticky='e')
+        workspace_actions = ttk.Frame(body, style='Card.TFrame')
+        workspace_actions.grid(row=0, column=0, sticky='e')
+        ttk.Button(workspace_actions, text='Sensor placement', command=self.open_sensor_placement, style='Secondary.TButton').pack(side='left', padx=(0, 8))
+        ttk.Button(workspace_actions, text='Compare snapshots', command=self.open_comparison, style='Secondary.TButton').pack(side='left')
         notice = ttk.Label(body, text='READ ONLY  |  Saved geometry, not a historical sweep state. Bounding envelopes are approximate; '
                            'not CAD solids, collision checks or certified clearance.', style='CardText.TLabel', wraplength=1150)
         notice.grid(row=1, column=0, sticky='ew', pady=(6, 10))
@@ -263,4 +266,11 @@ class GeometryDialog:
         dialog=GeometryComparisonDialog(self.window.master)
         if self.data is not None:
             dialog.set_snapshot('baseline',self.data,'From inspector snapshot')
+        return dialog
+
+    def open_sensor_placement(self):
+        from simulation_assistant.sensor_placement_ui import SensorPlacementDialog
+        dialog = SensorPlacementDialog(self.window.master)
+        if self.data is not None:
+            dialog.set_snapshot(self.data)
         return dialog

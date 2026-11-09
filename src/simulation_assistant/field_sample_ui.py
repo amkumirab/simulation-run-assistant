@@ -89,7 +89,8 @@ class FieldSamplesDialog:
         actions.grid(row=4, column=0, sticky="ew")
         for index, (label, callback) in enumerate((("Load workspace", self.load), ("Save workspace", self.save),
                  ("Export comparison CSV", self.export), ("Export layout points", self.export_layout),
-                 ("Sample saved COMSOL fields", self.open_saved_fields), ("Close", self.window.destroy))):
+                 ("Sample saved COMSOL fields", self.open_saved_fields), ("Sensor placement", self.open_sensor_placement),
+                 ("Close", self.window.destroy))):
             ttk.Button(actions, text=label, command=callback, style="Secondary.TButton").grid(row=index//4, column=index%4, padx=(0, 8), pady=4)
 
     def open_saved_fields(self):
@@ -99,6 +100,18 @@ class FieldSamplesDialog:
             dialog.window.lift()
         else:
             self.saved_fields = SavedFieldDialog(self)
+
+    def open_sensor_placement(self):
+        try:
+            sensors = self.layout.get_sensors()
+            from simulation_assistant.sensor_placement_ui import SensorPlacementDialog
+            dialog = SensorPlacementDialog(self.window.master)
+            frame = self.data.metadata.coordinate_frame if self.data is not None else 'frame not stored'
+            dialog.set_layout(sensors, 'Applied editor layout only | '+frame)
+            return dialog
+        except ValueError as exc:
+            self.summary.set('Placement preview blocked: '+str(exc))
+            return None
 
     def invalidate(self, *_args):
         if hasattr(self, "tree"):
