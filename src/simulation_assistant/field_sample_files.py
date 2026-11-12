@@ -40,7 +40,14 @@ def _read(path, suffix, limit):
 def load_field_csv(path: str | Path, metadata: FieldMetadata) -> FieldDataset:
     """Normalize a declared schema to SI; no inferred source/phase/units."""
     validate_metadata(metadata)
-    raw = _read(path, ".csv", 5_000_000)
+    return parse_field_csv(_read(path, ".csv", 5_000_000), metadata)
+
+
+def parse_field_csv(raw: bytes, metadata: FieldMetadata) -> FieldDataset:
+    """Parse the exact bounded bytes whose digest is used as source evidence."""
+    validate_metadata(metadata)
+    if not isinstance(raw, bytes) or len(raw) > 5_000_000:
+        raise ValueError('Field CSV needs at most 5 MB of bytes')
     try:
         reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")), strict=True)
         if reader.fieldnames is None or len(reader.fieldnames) != len(FIELD_COLUMNS) or set(reader.fieldnames) != set(FIELD_COLUMNS):
@@ -108,7 +115,13 @@ def _object(pairs):
 
 
 def load_field_workspace(path: str | Path) -> tuple[FieldDataset, tuple[Sensor, ...]]:
-    raw = _read(path, ".json", 8_000_000)
+    return parse_field_workspace(_read(path, ".json", 8_000_000))
+
+
+def parse_field_workspace(raw: bytes) -> tuple[FieldDataset, tuple[Sensor, ...]]:
+    """Validate a standalone workspace without reopening an external file."""
+    if not isinstance(raw, bytes) or len(raw) > 8_000_000:
+        raise ValueError('Field workspace needs at most 8 MB of bytes')
     try:
         document = json.loads(raw, object_pairs_hook=_object)
         if (not isinstance(document, dict) or set(document) != {"schema", "metadata", "source_sha256", "samples", "sensors", "workspace_sha256"}
