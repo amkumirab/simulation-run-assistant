@@ -11,7 +11,7 @@ def build_placement_widgets(owner):
     body.columnconfigure(0, weight=1)
     body.rowconfigure(4, weight=1)
     ttk.Label(body, text='Sensor Placement Preview', style='CardTitle.TLabel').grid(row=0, column=0, sticky='w')
-    notice = ttk.Label(body, text=NOTICE+' Positions only; no field data is displayed.', style='CardText.TLabel', wraplength=1150)
+    notice = ttk.Label(body, text=NOTICE+' Field overlay is opt-in and requires complete saved-source evidence.', style='CardText.TLabel', wraplength=1150)
     notice.grid(row=1, column=0, sticky='ew', pady=(6, 8))
     controls = ttk.Frame(body, style='Card.TFrame')
     controls.grid(row=2, column=0, sticky='ew', pady=(0, 8))

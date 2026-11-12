@@ -9,6 +9,8 @@ from simulation_assistant.geometry_inspector import validate_snapshot
 from simulation_assistant.sensor_placement import layout_digest, project_placement, projected_hits, unit_axis
 from simulation_assistant.sensor_placement_views import draw_placement, save_placement_svg
 from simulation_assistant.sensor_placement_widgets import build_placement_widgets
+from simulation_assistant.sensor_field_ui import SensorFieldOverlayControls
+from simulation_assistant.sensor_field_views import draw_overlay
 
 
 class SensorPlacementDialog:
@@ -30,6 +32,7 @@ class SensorPlacementDialog:
         self.details = tk.StringVar(value='No sensor selected. The table is authoritative when markers overlap.')
         self.status = tk.StringVar(value='Load sources, explicitly select geometry domains and review coordinate frames.')
         build_placement_widgets(self)
+        self.field_overlay = SensorFieldOverlayControls(self)
         self.trace = self.frames.trace_add('write', lambda *_: self.invalidate())
         self.redraw()
 
@@ -41,6 +44,7 @@ class SensorPlacementDialog:
 
     def invalidate(self, reset_frames=False):
         self.accepted, self.views = None, {}
+        self.field_overlay.invalidate(reset_state=True)
         if reset_frames:
             self.frames.set(False)
         self.redraw()
@@ -106,6 +110,7 @@ class SensorPlacementDialog:
             return False
 
     def preview(self):
+        self.field_overlay.invalidate(reset_state=True)
         try:
             project_placement(self.snapshot, self.sensors, self.domains(), 'XY', comparable_frames=self.frames.get())
             self.accepted = self.signature()
@@ -131,6 +136,9 @@ class SensorPlacementDialog:
                                          width=max(400, min(4000, canvas.winfo_width())), height=max(300, min(4000, canvas.winfo_height())))
                 self.views[plane] = view
             draw_placement(canvas, view, self.selected_sensor)
+            overlay = self.field_overlay.valid_result()
+            if view is not None and overlay is not None:
+                draw_overlay(canvas, view, overlay, self.selected_sensor)
 
     def sensor_selected(self, _event=None):
         selected = self.sensor_tree.selection()
@@ -140,6 +148,7 @@ class SensorPlacementDialog:
             axis = unit_axis(sensor)
             self.details.set(sensor.point_id+' | position (mm): '+', '.join(format(v*1000, '.12g') for v in sensor.position_m)
                              +'\nNormalized sensitivity axis (X, Y, Z): '+', '.join(format(a, '.12g') for a in axis))
+            self.field_overlay.sync_selection()
             self.redraw()
 
     def pick_sensor(self, plane, x, y):
@@ -172,3 +181,4 @@ class SensorPlacementDialog:
         if event.widget is self.window:
             self.closed = True
             self.frames.trace_remove('write', self.trace)
+            self.field_overlay.close()
