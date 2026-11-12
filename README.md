@@ -534,6 +534,13 @@ envelopes in XY and XZ. Confirm comparable global frames before drawing or
 exporting a traceable SVG. This is not CAD, clearance or a field/MTJ response.
 See the [placement guide and real-geometry example](docs/SENSOR_PLACEMENT.md).
 
+The opt-in **Field overlay** tab binds complete saved-field evidence bundles to
+matching current-model geometry after separate frame and solution-state
+declarations. Compare ideal-axis amplitudes/phase, inspect complex Bx/By/Bz and
+export a traceable SVG; missing samples are unavailable, never zero-filled.
+See the [field overlay guide and actual saved-result replay](docs/SENSOR_FIELD_OVERLAY.md).
+No new solve, interpolation, calibrated MTJ output or vehicle detection is implied.
+
 For bounded input exploration, open **Runs > Experiment planner** in the native
 app. Configure continuous quantities and integer counts, choose a state budget
 and seed, inspect the exact points, then save or explicitly queue/run them.

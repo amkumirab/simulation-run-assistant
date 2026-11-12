@@ -440,3 +440,44 @@ with clean runtime diagnostics and compilation. Native PNG metadata and the
 SVG's explicit illustrative-layout/source evidence were checked again. The
 final documentation tree retains the full 421-test suite; rebuild and inspect
 its wheel and run isolated installed examples before recording that commit.
+
+### Sensor field overlay (2026-11-12)
+
+- [x] Exact-byte CSV/workspace parsers preserve the existing formats and pass
+  bounded input and roundtrip compatibility checks.
+- [x] Strict saved-field bundle loading validates hashes, sources, states,
+  metadata, coverage and sample locations; malformed evidence tests pass.
+- [x] Pure overlay analysis gates current-source geometry and explicit state/
+  frame declarations; complex, zero and unavailable readings remain truthful.
+- [x] Native controls/plot labels/details/SVG export retain geometry-only
+  behavior, clear stale approval, preserve failed loads and pass UI checks.
+- [x] Honest saved-result replay, actual captures, English guide, full tests,
+  compilation and isolated installed-package verification complete.
+
+Final verification (2026-11-12): all 450 tests passed without skips or runtime
+diagnostics; compilation and the dependency-free 0.37.0 wheel build passed.
+All eight affected runtime modules matched the wheel bytes and loaded from an
+isolated install; headless export and the real native replay passed there too.
+Native checks exercised 1000x760/1240x850, selection, unavailable rows, stale
+approval, failed loads/exports and geometry-only preview. Actual captures and
+the rendered SVG were inspected. Both original solved MPH hashes remained
+unchanged after private-copy geometry inspection; no build/mesh/solve/save ran.
+English text, credential-shaped data and diff whitespace checks passed. Model
+files, production queue, version, dependencies and Git HEAD remain unchanged.
+Changes were kept local and uncommitted during that initial preparation.
+
+### Sensor field publication (2026-11-12)
+
+- [x] Review the complete change and exclude private models, transient outputs,
+  credentials and unrelated files from publication.
+- [x] Verify each exact indexed tree independently, including all regressions
+  and compilation, before its dependency-ordered commit.
+- [x] Verify the final wheel and isolated installed native/headless examples
+  before the fourth commit.
+
+The four dependency-ordered index archives pass 432, 441, 447 and 450 tests,
+respectively, with compilation and no disabled tests. The final candidate
+retains the actual native captures and paired saved-field/geometry sources.
+Private MPH hashes still match the checked source evidence. The publication
+targets origin/main; pushing and inspecting the resulting remote CI run follow
+the fourth commit and are reported in the handoff. No version bump or tag.

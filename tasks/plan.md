@@ -185,3 +185,29 @@ keeping related behavior assertions with each implementation and verifying the
 exact index without future working-tree inputs. Recheck the final wheel and
 isolated native/offline examples before the documentation commit. Preserve
 source fixtures and research files; no remote publication or version bump.
+
+## Sensor field overlay (2026-11-12)
+
+Implement `docs/SENSOR_FIELD_OVERLAY.md` in thin verified slices: exact-byte field
+parsers and compatibility; strict immutable saved-field bundle provenance;
+source/state-gated numeric comparison; static SVG/native overlay integration;
+then honest worked examples/captures/docs and full build/regression checks.
+Reuse the existing placement window and ideal-axis semantics. Keep reference
+fields separate from current geometry; no hash-only geometry-state approval.
+Unknown provenance blocks merged plotting. No model changes, solves, dependency,
+database migration, commits or push during preparation.
+
+Implemented and verified: complete saved-field bundle association, immutable
+axis projections, opt-in native controller, selected-sensor annotations and
+traceable SVG. Matching geometry was read from both real solved source files
+using private copies without changing their hashes. The final 450-test suite,
+wheel byte checks and isolated native/headless replays passed. Ready for user
+review; initial preparation left all changes local and uncommitted at 29bc835.
+
+Publication is now requested. Finalize in four independently verified commits:
+exact-byte parsing/source bundles with tests; pure overlay and SVG with tests;
+native workspace integration with desktop tests; then real examples, captures,
+guides and validation records. Verify exact index archives rather than relying
+on future working-tree files, recheck the final wheel/native replay, then push
+the reviewed main branch and inspect remote checks. No model operation, new
+dependency, version bump, tag or separate release is part of this publication.

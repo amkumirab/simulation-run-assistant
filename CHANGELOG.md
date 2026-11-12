@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Opt-in native Sensor Field Overlay with strict saved-source/state consistency
+  checks, separate geometry-state/frame declarations, complex component detail,
+  selected-sensor XY/XZ readings and traceable vector export
+- Matching actual saved COMSOL field/geometry replay, native captures and a
+  step-by-step guide; no new solve or calibrated sensor-response claim
 - Native Sensor Placement Preview with explicit coordinate-frame declaration,
   equal-scale XY/XZ envelopes, sensor-axis projections and independent editor inputs
 - Traceable SVG placement images and real saved-geometry replay with clearly

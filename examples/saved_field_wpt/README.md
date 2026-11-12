@@ -5,6 +5,12 @@ solutions, not synthetic readings or measured hardware data. It compares two
 solved 3D WPT models: an aligned receiver and a receiver offset by 30 mm.
 The private MPH models are not included.
 
+Matching saved geometry snapshots are included as `geometry-position-1.json`
+and `geometry-position-2.json`. The [Sensor Field Overlay guide](../../docs/SENSOR_FIELD_OVERLAY.md)
+shows how to bind these results with explicit frame/current-state declarations,
+inspect complex components and display selected-sensor readings on XY/XZ views.
+This offline replay needs no COMSOL process or new solve.
+
 ## View the example without COMSOL
 
 From the repository root, using the existing project environment:

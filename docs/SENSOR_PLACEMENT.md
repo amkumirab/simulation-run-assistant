@@ -7,6 +7,9 @@ saved geometry envelopes in XY and XZ. This is a read-only placement sketch,
 not a field map, CAD view, collision/clearance check, calibrated sensor response
 or controller result. No MPH file is opened, modified, rebuilt or solved.
 Python 3.10+, Tk/ttk and the standard library only; no dependency or schema change.
+This guide describes geometry-only mode. The separate opt-in
+[Field overlay workflow](SENSOR_FIELD_OVERLAY.md) can display saved fields only
+after evidence validation and fresh frame/current-state declarations.
 
 ## Desktop walkthrough
 
