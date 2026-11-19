@@ -58,6 +58,6 @@ def build_placement_widgets(owner):
     actions = ttk.Frame(body, style='Card.TFrame')
     actions.grid(row=7, column=0, sticky='ew')
     ttk.Button(actions, text='Export placement SVG', command=owner.export, style='Primary.TButton').pack(side='left')
-    ttk.Button(actions, text='Close', command=owner.window.destroy, style='Secondary.TButton').pack(side='right')
+    ttk.Button(actions, text='Close', command=owner.close, style='Secondary.TButton').pack(side='right')
     body.bind('<Configure>', lambda event: [label.configure(wraplength=max(400, event.width-36))
                                            for label in (notice, geometry_info, layout_info, details, status, preview_note)])

@@ -26,7 +26,8 @@ def build_field_widgets(owner):
     controls = ttk.Frame(tab)
     controls.grid(row=0, column=0, sticky='ew')
     for label, command in (('Load saved-field bundle', owner.load), ('Use bundle layout', owner.use_layout),
-                           ('Analyze overlay', owner.analyze), ('Export field SVG', owner.export)):
+                           ('Analyze overlay', owner.analyze), ('Export field SVG', owner.export),
+                           ('Sensor profiles', owner.open_sensor_profiles)):
         ttk.Button(controls, text=label, command=command).pack(side='left', padx=(0, 6))
     scenarios = ttk.Frame(tab)
     scenarios.grid(row=1, column=0, sticky='ew', pady=8)

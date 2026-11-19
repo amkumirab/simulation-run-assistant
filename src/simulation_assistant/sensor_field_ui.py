@@ -20,6 +20,7 @@ class SensorFieldOverlayControls:
     def __init__(self, owner):
         self.owner = owner
         self.bundle, self.result, self.accepted = None, None, None
+        self.profile_window = None
         self.current = tk.StringVar(master=owner.window)
         self.reference = tk.StringVar(master=owner.window)
         self.state_matches = tk.BooleanVar(master=owner.window, value=False)
@@ -42,6 +43,8 @@ class SensorFieldOverlayControls:
         self.owner.preview_note.set((self.owner.layout_label or 'No copied sensor layout')+' | positions only, no field data')
         if reset_state and self.state_matches.get():
             self.state_matches.set(False)
+        if self.profile_window is not None and not self.profile_window.closed:
+            self.profile_window.source_changed()
 
     def approval_changed(self, *_):
         self.invalidate()
@@ -122,7 +125,20 @@ class SensorFieldOverlayControls:
         self.sync_selection()
         self.owner.redraw()
         self.owner.status.set('Saved fields only. State geometry is user-declared; selected-sensor labels are in Placement views. Not calibrated MTJ output.')
+        if self.profile_window is not None and not self.profile_window.closed:
+            self.profile_window.source_changed()
         return True
+
+    def open_sensor_profiles(self):
+        if self.profile_window is None or self.profile_window.closed:
+            from simulation_assistant.sensor_profile_ui import SensorProfileDialog
+            self.profile_window = SensorProfileDialog(self)
+        else:
+            self.profile_window.window.lift()
+        return self.profile_window
+
+    def can_close(self):
+        return self.profile_window is None or self.profile_window.can_close()
 
     def selected(self, _event=None):
         selected = self.tree.selection()

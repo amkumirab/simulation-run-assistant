@@ -23,7 +23,8 @@ class SensorPlacementDialog:
         self.window.geometry('1240x850')
         self.window.minsize(1000, 760)
         self.window.transient(parent)
-        self.window.bind('<Escape>', lambda _e: self.window.destroy())
+        self.window.bind('<Escape>', lambda _e: self.close())
+        self.window.protocol('WM_DELETE_WINDOW', self.close)
         self.window.bind('<Destroy>', self.destroyed)
         self.frames = tk.BooleanVar(value=False)
         self.geometry_info = tk.StringVar(value='No geometry snapshot loaded.')
@@ -176,6 +177,12 @@ class SensorPlacementDialog:
         except (OSError, ValueError) as exc:
             self.status.set('Export blocked; current work kept: '+str(exc)[-350:])
             return False
+
+    def close(self):
+        if not self.field_overlay.can_close():
+            return False
+        self.window.destroy()
+        return True
 
     def destroyed(self, event):
         if event.widget is self.window:
