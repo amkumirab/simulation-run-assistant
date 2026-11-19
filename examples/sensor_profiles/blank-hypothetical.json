@@ -1,0 +1,13 @@
+{
+  "schema": "wpt.sensor-profile.v1",
+  "name": "My hypothetical sensor",
+  "device": "",
+  "basis": "hypothetical",
+  "target_field": "unknown",
+  "frequency": null,
+  "field": null,
+  "sensitivity": null,
+  "noise": null,
+  "notes": "",
+  "profile_sha256": "9d08e8a331a0d28e41c889260d473787565cb2cb3b90eb50a0d8859b940b6d19"
+}

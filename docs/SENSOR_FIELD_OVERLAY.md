@@ -9,6 +9,9 @@ No new COMSOL solve, model edit, interpolated heatmap, calibrated MTJ response,
 position estimator or hardware controller. Python 3.10+, standard library only.
 The approved placement sketches remain approximate envelopes, not CAD.
 This is not calibrated MTJ output or evidence of vehicle-position detection.
+The **Sensor profiles** action opens optional [declared-limit screening](SENSOR_PROFILES.md)
+with hypothetical or user-documented profiles, explicit bias/conditions and
+traceable reports. It does not alter the field overlay or its geometry-only SVG.
 
 ## Desktop walkthrough
 

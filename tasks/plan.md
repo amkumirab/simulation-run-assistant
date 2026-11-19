@@ -211,3 +211,35 @@ guides and validation records. Verify exact index archives rather than relying
 on future working-tree files, recheck the final wheel/native replay, then push
 the reviewed main branch and inspect remote checks. No model operation, new
 dependency, version bump, tag or separate release is part of this publication.
+
+## Sensor profiles and declared limits (2026-11-16)
+
+Implement `docs/SENSOR_PROFILES.md` after the approved profile proposal. User
+clarified that no physical sensor/datasheet is available or necessarily planned;
+keep hypothetical design profiles usable and visibly distinct from documented
+device records. Unknown numeric values stay blank/null. Build profile validation
+and strict portable files first, then gated frequency/signed-axis field checks,
+traceable reports, native editing/evaluation, and honest saved-result examples.
+Use explicit uniform DC bias and purpose/condition declarations; do not invent
+zero bias, device performance, noise-based detectability or MTJ calibration.
+Verify each small slice with tests before integrating. Native checks and full
+regressions/build/isolated installed replay finish the work. No COMSOL model
+changes, new solves, dependency, schema migration, commit or push in this stage.
+
+Completed locally: all five slices and 482 tests pass, with real native and
+isolated installed-package replay. The user can work entirely with explicitly
+hypothetical profiles; a selected device/datasheet is not required. Report input
+fingerprints prevent stale provenance even when only profile metadata changes.
+Window wrapping and late file-dialog edits have regression guards. Source
+models, run queue, package version and Git history remain unchanged. Ready for
+user review and separate commit authorization; no remote publication performed.
+
+## Sensor profile publication (2026-11-19)
+
+Publication is authorized. Review and verify four dependency-ordered commits:
+profile declarations and portable files; pure screening and traceable reports;
+native profile integration; then examples, actual captures and English guides.
+Test exact staged archives, build and replay the final isolated installation,
+inspect staged content and complete commit metadata, then push main and check
+the remote revision and CI. No model changes, new solve, dependency, version
+bump, tag or separate release is included.

@@ -541,6 +541,14 @@ export a traceable SVG; missing samples are unavailable, never zero-filled.
 See the [field overlay guide and actual saved-result replay](docs/SENSOR_FIELD_OVERLAY.md).
 No new solve, interpolation, calibrated MTJ output or vehicle detection is implied.
 
+From Field overlay, open **Sensor profiles** to save hypothetical design limits
+or user-documented device declarations, then screen accepted fields against
+frequency and signed sensitivity-axis B ranges. A datasheet is optional for
+hypothetical exploration; unknown limits/bias stay unavailable, not zero.
+Sensitivity/noise are recorded only. See the [sensor profile guide and worked
+assumption-based replay](docs/SENSOR_PROFILES.md); no hardware detectability or
+calibration is claimed.
+
 For bounded input exploration, open **Runs > Experiment planner** in the native
 app. Configure continuous quantities and integer counts, choose a state budget
 and seed, inspect the exact points, then save or explicitly queue/run them.

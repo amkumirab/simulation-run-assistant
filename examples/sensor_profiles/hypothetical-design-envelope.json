@@ -1,0 +1,25 @@
+{
+  "schema": "wpt.sensor-profile.v1",
+  "name": "Hypothetical narrow design envelope",
+  "device": "",
+  "basis": "hypothetical",
+  "target_field": "charging-coil-ac",
+  "frequency": {
+    "low": 0.0,
+    "high": 100.0,
+    "unit": "kHz",
+    "source": "Illustrative design assumption, not an MTJ datasheet",
+    "conditions": "Single-frequency screening"
+  },
+  "field": {
+    "low": -35.0,
+    "high": 35.0,
+    "unit": "uT",
+    "source": "Illustrative design assumption, not an MTJ datasheet",
+    "conditions": "Signed sensitivity-axis B only"
+  },
+  "sensitivity": null,
+  "noise": null,
+  "notes": "No physical sensor selected. These limits cannot establish hardware detectability.",
+  "profile_sha256": "95206e617e251a9f1c55591e0aee31622757abcee1941ccb19421ab9eb874dba"
+}

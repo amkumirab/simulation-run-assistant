@@ -6,6 +6,10 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- Portable hypothetical/documented sensor profiles and explicit frequency/axis-B
+  limit screening, with unknown bias preserved and no inferred calibration/SNR
+- Native profile editing, draft protection, traceable assessment JSON and actual
+  saved-field replay using clearly labelled design assumptions
 - Opt-in native Sensor Field Overlay with strict saved-source/state consistency
   checks, separate geometry-state/frame declarations, complex component detail,
   selected-sensor XY/XZ readings and traceable vector export

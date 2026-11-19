@@ -481,3 +481,47 @@ retains the actual native captures and paired saved-field/geometry sources.
 Private MPH hashes still match the checked source evidence. The publication
 targets origin/main; pushing and inspecting the resulting remote CI run follow
 the fourth commit and are reported in the handoff. No version bump or tag.
+
+### Sensor profiles and declared limits (2026-11-16)
+
+- [x] Frozen hypothetical/documented profiles and bounded checksummed JSON;
+  unknowns, units, sources, conditions and invalid inputs covered by tests.
+- [x] Pure screening preserves unavailable data and explicit context; peak/RMS,
+  signed uniform bias, inclusive bounds and conservative rollup tested.
+- [x] Reports retain complete profile, assumptions, source/state/digest evidence
+  and reject stale/tampered results; atomic-write/error checks pass.
+- [x] Native profile editor/evaluation integrates with accepted overlay, clears
+  stale input and protects drafts; real Tk and existing UI regressions pass.
+- [x] Clearly hypothetical saved-result replay, actual captures, English guide,
+  full tests, compilation, wheel and isolated installed replay verified.
+
+Verification (2026-11-16): all 482 tests passed without skips or runtime
+diagnostics. The profile roundtrip test covers 120 seeded combinations of
+units/optional values without a new test dependency. Native checks include
+1040x780/1240x900, both tabs, horizontal text wrapping, dirty parent close,
+unknown/partial bias, cancelled/failed I/O and edits during file dialogs.
+Compilation and the 0.37.0 wheel build passed. All eleven affected runtime
+modules match wheel bytes and load from the isolated install; wide/narrow/
+unknown headless replays and the actual native replay passed there. Captures
+were taken from that installed native window and visually reviewed. No MPH
+was opened/modified, no new solve or production-queue action occurred, and no
+dependency addition, existing-schema migration or version change was made. English/credential-shape/whitespace
+checks passed. Changes remain local and uncommitted at unchanged HEAD 93d3af9.
+
+### Sensor profile publication checks (2026-11-19)
+
+- [x] Review declarations, strict files, screening, report provenance, native
+  invalidation/draft protection and the English examples and actual captures.
+- [x] Verify isolated index archives for the first three slices: 459, 471 and
+  479 tests respectively, with compilation and no skipped or disabled tests.
+- [x] Build the dependency-free wheel and check all eleven affected runtime
+  modules against both source and a fresh isolated installation.
+- [x] Replay wide/narrow/unknown cases and the actual native window from that
+  installation; confirm the disposable queue remains empty and disconnected.
+- [x] Inspect changed text, branch, author/committer and full commit messages;
+  retain existing tests and source models without new solves or dependencies.
+
+The final example/documentation index is tested before its commit. Push targets
+origin/main; the final remote revision and CI result are checked after pushing
+and reported in the handoff. This is a source publication, not a version bump,
+tag or separate release.
